@@ -33,6 +33,7 @@ export default function StudentDetailScreen() {
   const [loading, setLoading] = useState(true);
 
   const [studentStreak, setStudentStreak] = useState(0);
+  const [showActionSheet, setShowActionSheet] = useState(false);
 
   // Calendar state
   const [calMonth, setCalMonth] = useState(new Date().toISOString().slice(0, 7));
@@ -186,13 +187,7 @@ export default function StudentDetailScreen() {
     setShowEditModal(true);
   };
 
-  const showMenu = () => {
-    Alert.alert('Student Options', undefined, [
-      { text: 'Edit Student', onPress: () => openEdit(student, feePlan) },
-      { text: 'Delete Student', style: 'destructive', onPress: confirmDelete },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  };
+  const showMenu = () => setShowActionSheet(true);
 
   const confirmDelete = () => {
     Alert.alert(
@@ -538,6 +533,28 @@ export default function StudentDetailScreen() {
         </View>
       </ScrollView>
 
+      {/* Action Sheet — works on both native and web */}
+      <Modal visible={showActionSheet} transparent animationType="slide" onRequestClose={() => setShowActionSheet(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowActionSheet(false)}>
+          <TouchableOpacity activeOpacity={1} style={styles.actionSheet}>
+            <View style={styles.modalHandle} />
+            <TouchableOpacity style={styles.actionRow} onPress={() => { setShowActionSheet(false); setTimeout(() => openEdit(student, feePlan), 200); }}>
+              <Ionicons name="create-outline" size={20} color={Colors.text} />
+              <Text style={styles.actionText}>Edit Student</Text>
+            </TouchableOpacity>
+            <View style={styles.actionDivider} />
+            <TouchableOpacity style={styles.actionRow} onPress={() => { setShowActionSheet(false); setTimeout(() => confirmDelete(), 200); }}>
+              <Ionicons name="trash-outline" size={20} color={Colors.danger} />
+              <Text style={[styles.actionText, { color: Colors.danger }]}>Delete Student</Text>
+            </TouchableOpacity>
+            <View style={styles.actionDivider} />
+            <TouchableOpacity style={styles.actionRow} onPress={() => setShowActionSheet(false)}>
+              <Text style={[styles.actionText, { color: Colors.textSecondary }]}>Cancel</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
       {/* Edit Modal */}
       <Modal
         visible={showEditModal}
@@ -733,6 +750,15 @@ const styles = StyleSheet.create({
   calCell: { width: (SCREEN_WIDTH - 32 - 32) / 7, alignItems: 'center', paddingVertical: 3 },
   calDayCircle: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   calDayNum: { fontSize: 12 },
+
+  // Action sheet
+  actionSheet: {
+    backgroundColor: Colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    padding: 16, paddingBottom: 32,
+  },
+  actionRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 16, paddingHorizontal: 8 },
+  actionText: { fontSize: 16, fontWeight: '600', color: Colors.text },
+  actionDivider: { height: 1, backgroundColor: Colors.border, marginHorizontal: 8 },
 
   // Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
