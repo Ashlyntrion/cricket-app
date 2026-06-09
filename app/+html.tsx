@@ -18,10 +18,10 @@ export default function Root({ children }: { children: React.ReactNode }) {
         <meta name="apple-mobile-web-app-title" content="Cricket Coach" />
         <link rel="apple-touch-icon" href="/favicon.png" />
 
-        {/* Prevent text size adjustment on orientation change */}
         <style>{`
           html { -webkit-text-size-adjust: 100%; }
           body { margin: 0; padding: 0; }
+          #root { padding-bottom: env(safe-area-inset-bottom, 0px); }
         `}</style>
 
         <ScrollViewStyleReset />
