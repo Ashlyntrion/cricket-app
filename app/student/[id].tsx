@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator,
-  Alert, Modal, TextInput, KeyboardAvoidingView, Platform,
+  Alert, Modal, TextInput, KeyboardAvoidingView, Platform, Dimensions,
 } from 'react-native';
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -31,6 +33,11 @@ export default function StudentDetailScreen() {
   const [loading, setLoading] = useState(true);
 
   const [studentStreak, setStudentStreak] = useState(0);
+
+  // Calendar state
+  const [calMonth, setCalMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [calData, setCalData] = useState<Record<string, string>>({});
+  const [calLoading, setCalLoading] = useState(false);
 
   // Edit state
   const [showEditModal, setShowEditModal] = useState(false);
@@ -120,6 +127,50 @@ export default function StudentDetailScreen() {
     }
 
     setLoading(false);
+  };
+
+  // Reload calendar when month changes or student loads
+  useEffect(() => {
+    if (!id || !student?.batch_id) return;
+    loadCalendarData(calMonth, student.batch_id);
+  }, [calMonth, student?.batch_id]);
+
+  const loadCalendarData = async (month: string, batchId: string) => {
+    setCalLoading(true);
+    const [year, m] = month.split('-').map(Number);
+    const startDate = `${month}-01`;
+    const endDate = `${month}-${new Date(year, m, 0).getDate()}`;
+
+    // Only sessions for this student's batch
+    const { data: sessions } = await supabase
+      .from('sessions')
+      .select('id, date')
+      .eq('batch_id', batchId)
+      .gte('date', startDate)
+      .lte('date', endDate);
+
+    const sessionMap = new Map((sessions || []).map((s: any) => [s.id, s.date as string]));
+    const sessionIds = [...sessionMap.keys()];
+
+    // Mark all batch session days (will be overwritten if student has a record)
+    const dayMap: Record<string, string> = {};
+    sessionMap.forEach((date) => { dayMap[date] = 'session'; });
+
+    if (sessionIds.length > 0) {
+      const { data: attRecs } = await supabase
+        .from('attendance')
+        .select('status, session_id')
+        .eq('student_id', id as string)
+        .in('session_id', sessionIds);
+
+      (attRecs || []).forEach((rec: any) => {
+        const date = sessionMap.get(rec.session_id);
+        if (date) dayMap[date] = rec.status;
+      });
+    }
+
+    setCalData(dayMap);
+    setCalLoading(false);
   };
 
   const openEdit = (s: any, plan: any) => {
@@ -364,6 +415,105 @@ export default function StudentDetailScreen() {
           </View>
         )}
 
+        {/* Monthly Attendance Calendar */}
+        <View style={styles.card}>
+          <View style={styles.calHeader}>
+            <TouchableOpacity
+              style={styles.calArrow}
+              onPress={() => {
+                const [y, m] = calMonth.split('-').map(Number);
+                const prev = new Date(y, m - 2, 1);
+                setCalMonth(prev.toISOString().slice(0, 7));
+              }}
+            >
+              <Ionicons name="chevron-back" size={18} color={Colors.text} />
+            </TouchableOpacity>
+            <Text style={styles.calTitle}>
+              {new Date(`${calMonth}-01`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
+            </Text>
+            <TouchableOpacity
+              style={[styles.calArrow, calMonth >= new Date().toISOString().slice(0, 7) && { opacity: 0.3 }]}
+              disabled={calMonth >= new Date().toISOString().slice(0, 7)}
+              onPress={() => {
+                const [y, m] = calMonth.split('-').map(Number);
+                const next = new Date(y, m, 1);
+                setCalMonth(next.toISOString().slice(0, 7));
+              }}
+            >
+              <Ionicons name="chevron-forward" size={18} color={Colors.text} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Legend */}
+          <View style={styles.calLegend}>
+            {[
+              { label: 'Present', color: Colors.present, textColor: Colors.presentText },
+              { label: 'Absent', color: Colors.absent, textColor: Colors.absentText },
+              { label: 'Late', color: Colors.late, textColor: Colors.lateText },
+              { label: 'No record', color: Colors.background, textColor: Colors.textMuted, border: true },
+            ].map((l) => (
+              <View key={l.label} style={styles.calLegendItem}>
+                <View style={[styles.calLegendDot, { backgroundColor: l.color, borderWidth: l.border ? 1 : 0, borderColor: Colors.border }]} />
+                <Text style={[styles.calLegendText, { color: l.textColor }]}>{l.label}</Text>
+              </View>
+            ))}
+          </View>
+
+          {/* Day headers */}
+          <View style={styles.calDayHeaders}>
+            {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
+              <Text key={i} style={styles.calDayHeader}>{d}</Text>
+            ))}
+          </View>
+
+          {/* Calendar grid */}
+          {calLoading ? (
+            <ActivityIndicator size="small" color={Colors.primary} style={{ marginVertical: 20 }} />
+          ) : (() => {
+            const [year, m] = calMonth.split('-').map(Number);
+            const firstDay = new Date(year, m - 1, 1);
+            const daysInMonth = new Date(year, m, 0).getDate();
+            const startOffset = (firstDay.getDay() + 6) % 7;
+            const cells: (number | null)[] = [
+              ...Array(startOffset).fill(null),
+              ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+            ];
+            // Pad to complete last row
+            while (cells.length % 7 !== 0) cells.push(null);
+
+            return (
+              <View style={styles.calGrid}>
+                {cells.map((day, i) => {
+                  if (!day) return <View key={i} style={styles.calCell} />;
+                  const dateStr = `${calMonth}-${String(day).padStart(2, '0')}`;
+                  const status = calData[dateStr];
+                  const isToday = dateStr === new Date().toISOString().slice(0, 10);
+                  let bg = 'transparent';
+                  let textColor = Colors.textSecondary;
+                  let borderColor = 'transparent';
+                  if (status === 'present') { bg = Colors.present; textColor = Colors.presentText; borderColor = Colors.presentBorder; }
+                  else if (status === 'absent') { bg = Colors.absent; textColor = Colors.absentText; borderColor = Colors.absentBorder; }
+                  else if (status === 'late') { bg = Colors.late; textColor = Colors.lateText; borderColor = Colors.lateBorder; }
+                  else if (status === 'session') { bg = Colors.background; textColor = Colors.textMuted; borderColor = Colors.border; }
+
+                  return (
+                    <View key={i} style={styles.calCell}>
+                      <View style={[
+                        styles.calDayCircle,
+                        { backgroundColor: bg, borderColor: isToday && !status ? Colors.primary : borderColor, borderWidth: isToday && !status ? 2 : (status ? 1 : 0) },
+                      ]}>
+                        <Text style={[styles.calDayNum, { color: isToday && !status ? Colors.primary : textColor, fontWeight: isToday ? '800' : '600' }]}>
+                          {day}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            );
+          })()}
+        </View>
+
         {/* Fee section */}
         <View style={[styles.card, { marginBottom: 32 }]}>
           <View style={styles.feeHeader}>
@@ -565,6 +715,21 @@ const styles = StyleSheet.create({
   feeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   payNowBtn: { backgroundColor: Colors.primary, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 7 },
   payNowText: { color: 'white', fontSize: 13, fontWeight: '600' },
+
+  // Calendar
+  calHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  calArrow: { padding: 6 },
+  calTitle: { fontSize: 15, fontWeight: '700', color: Colors.text },
+  calLegend: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 12 },
+  calLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  calLegendDot: { width: 10, height: 10, borderRadius: 5 },
+  calLegendText: { fontSize: 11, fontWeight: '500' },
+  calDayHeaders: { flexDirection: 'row', marginBottom: 4 },
+  calDayHeader: { width: (SCREEN_WIDTH - 32 - 32) / 7, textAlign: 'center', fontSize: 11, fontWeight: '700', color: Colors.textMuted },
+  calGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  calCell: { width: (SCREEN_WIDTH - 32 - 32) / 7, alignItems: 'center', paddingVertical: 3 },
+  calDayCircle: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  calDayNum: { fontSize: 12 },
 
   // Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
