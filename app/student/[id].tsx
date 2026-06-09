@@ -190,14 +190,15 @@ export default function StudentDetailScreen() {
   const showMenu = () => setShowActionSheet(true);
 
   const confirmDelete = () => {
-    Alert.alert(
-      'Delete Student',
-      `Remove ${student?.name} from the academy? Their attendance and fee history will be preserved but they will no longer appear in any list.`,
-      [
+    const msg = `Remove ${student?.name} from the academy? Their attendance and fee history will be preserved but they will no longer appear in any list.`;
+    if (Platform.OS === 'web') {
+      if (confirm(msg)) doDelete();
+    } else {
+      Alert.alert('Delete Student', msg, [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Delete', style: 'destructive', onPress: doDelete },
-      ]
-    );
+      ]);
+    }
   };
 
   const doDelete = async () => {

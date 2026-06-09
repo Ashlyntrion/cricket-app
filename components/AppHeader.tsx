@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Modal,
-  Animated, Dimensions, ScrollView, TouchableWithoutFeedback, Alert, Linking,
+  Animated, Dimensions, ScrollView, TouchableWithoutFeedback, Alert, Linking, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -142,18 +142,21 @@ export function AppHeader({ title }: AppHeaderProps) {
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.footerRow}
-                  onPress={() => {
-                    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-                      { text: 'Cancel', style: 'cancel' },
-                      {
-                        text: 'Sign Out', style: 'destructive',
-                        onPress: async () => {
-                          closeDrawer();
-                          await supabase.auth.signOut();
-                          router.replace('/login');
-                        },
-                      },
-                    ]);
+                  onPress={async () => {
+                    const doSignOut = async () => {
+                      closeDrawer();
+                      await supabase.auth.signOut();
+                      router.replace('/login');
+                    };
+                    if (Platform.OS === 'web') {
+                      // eslint-disable-next-line no-restricted-globals
+                      if (confirm('Are you sure you want to sign out?')) doSignOut();
+                    } else {
+                      Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Sign Out', style: 'destructive', onPress: doSignOut },
+                      ]);
+                    }
                   }}
                 >
                   <Ionicons name="log-out-outline" size={20} color={Colors.danger} />
