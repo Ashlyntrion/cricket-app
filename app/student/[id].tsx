@@ -53,7 +53,9 @@ export default function StudentDetailScreen() {
   const { getStudentAttendanceStats } = useAttendance();
   const { batches, refetchStudents } = useData();
 
-  const monthStr = new Date().toISOString().slice(0, 7);
+  const now = new Date();
+  const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const currentMonthStr = monthStr;
 
   useEffect(() => {
     if (!id) return;
@@ -139,7 +141,8 @@ export default function StudentDetailScreen() {
     setCalLoading(true);
     const [year, m] = month.split('-').map(Number);
     const startDate = `${month}-01`;
-    const endDate = `${month}-${new Date(year, m, 0).getDate()}`;
+    const lastDay = new Date(year, m, 0).getDate();
+    const endDate = `${month}-${String(lastDay).padStart(2, '0')}`;
 
     // Only sessions for this student's batch
     const { data: sessions } = await supabase
@@ -423,21 +426,21 @@ export default function StudentDetailScreen() {
               onPress={() => {
                 const [y, m] = calMonth.split('-').map(Number);
                 const prev = new Date(y, m - 2, 1);
-                setCalMonth(prev.toISOString().slice(0, 7));
+                setCalMonth(`${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`);
               }}
             >
               <Ionicons name="chevron-back" size={18} color={Colors.text} />
             </TouchableOpacity>
             <Text style={styles.calTitle}>
-              {new Date(`${calMonth}-01`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
+              {new Date(`${calMonth}-15`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
             </Text>
             <TouchableOpacity
-              style={[styles.calArrow, calMonth >= new Date().toISOString().slice(0, 7) && { opacity: 0.3 }]}
-              disabled={calMonth >= new Date().toISOString().slice(0, 7)}
+              style={[styles.calArrow, calMonth >= currentMonthStr && { opacity: 0.3 }]}
+              disabled={calMonth >= currentMonthStr}
               onPress={() => {
                 const [y, m] = calMonth.split('-').map(Number);
                 const next = new Date(y, m, 1);
-                setCalMonth(next.toISOString().slice(0, 7));
+                setCalMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`);
               }}
             >
               <Ionicons name="chevron-forward" size={18} color={Colors.text} />
