@@ -271,7 +271,7 @@ export default function FeesScreen() {
               })
             )}
           </View>
-          <View style={{ height: 100 }} />
+          <View style={{ height: 180 }} />
         </ScrollView>
       )}
 
@@ -415,7 +415,7 @@ const styles = StyleSheet.create({
   },
   payBtn: { backgroundColor: Colors.primary, borderRadius: 6, paddingHorizontal: 12, paddingVertical: 5 },
   payBtnText: { color: 'white', fontSize: 12, fontWeight: '700' },
-  fabRow: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 14, paddingBottom: 12 },
+  fabRow: { position: 'absolute', bottom: 86, left: 0, right: 0, padding: 14, paddingBottom: 0 },
   fab: {
     backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 16,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
