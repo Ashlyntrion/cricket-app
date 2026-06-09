@@ -236,7 +236,7 @@ export default function DashboardScreen() {
         </TouchableOpacity>
 
         {/* Needs attention */}
-        <View style={[styles.card, { marginBottom: 32 }]}>
+        <View style={[styles.card, { marginBottom: 100 }]}>
           <Text style={styles.cardTitle}>Needs Attention</Text>
           {needsAttention.length === 0 ? (
             <View style={styles.allGoodRow}>
