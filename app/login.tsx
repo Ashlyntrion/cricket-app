@@ -1,14 +1,13 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ActivityIndicator,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { Colors } from '../constants/colors';
-import { CricketShield } from '../components/CricketShield';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -71,7 +70,7 @@ export default function LoginScreen() {
         <SafeAreaView edges={['top']} style={{ flex: 1 }}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.inner}>
             <View style={styles.logoWrap}>
-              <CricketShield size={100} />
+              <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
             </View>
             <Text style={styles.title}>Reset Password</Text>
             <Text style={styles.subtitle}>
@@ -137,7 +136,7 @@ export default function LoginScreen() {
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.inner}>
 
           <View style={styles.logoWrap}>
-            <CricketShield size={120} />
+            <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
           </View>
 
           <Text style={styles.title}>Cricket Academy</Text>
@@ -212,6 +211,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.dark },
   inner: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28 },
   logoWrap: { marginBottom: 16 },
+  logo: { width: 130, height: 130 },
   title: { fontSize: 26, fontWeight: '900', color: Colors.textOnDark, marginBottom: 4 },
   subtitle: { fontSize: 14, color: Colors.textSecondaryOnDark, marginBottom: 36, textAlign: 'center' },
   form: { width: '100%', gap: 14 },

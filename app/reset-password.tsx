@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ActivityIndicator,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { Colors } from '../constants/colors';
-import { CricketShield } from '../components/CricketShield';
 
 export default function ResetPasswordScreen() {
   const [password, setPassword] = useState('');
@@ -73,7 +72,7 @@ export default function ResetPasswordScreen() {
       <SafeAreaView edges={['top']} style={{ flex: 1 }}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.inner}>
           <View style={styles.logoWrap}>
-            <CricketShield size={100} />
+            <Image source={require('../assets/logo.png')} style={{ width: 110, height: 110 }} resizeMode="contain" />
           </View>
           <Text style={styles.title}>New Password</Text>
           <Text style={styles.subtitle}>Enter a new password for your account</Text>
