@@ -171,28 +171,30 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // On web the session may not be ready on mount — wait for it before fetching
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        fetchBatches();
-        fetchStudents();
-        loadProfile();
-        reloadNotifs();
-      }
-    });
-
-    // Also refetch when the user signs in (covers web redirect flow)
+    // onAuthStateChange always fires INITIAL_SESSION on startup — use it as the
+    // single source of truth so we never get stuck in a loading state
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session) {
-        fetchBatches();
-        fetchStudents();
+      if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+        if (session) {
+          fetchBatches();
+          fetchStudents();
+          loadProfile();
+          reloadNotifs();
+        } else {
+          // No session — stop spinners so the app can redirect to login
+          setBatchLoading(false);
+          setStudentLoading(false);
+        }
+      }
+      if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
         loadProfile();
-        reloadNotifs();
       }
       if (event === 'SIGNED_OUT') {
         setBatches([]);
         setStudents([]);
         setNotifs([]);
+        setBatchLoading(false);
+        setStudentLoading(false);
       }
     });
 
