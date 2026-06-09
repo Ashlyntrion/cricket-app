@@ -37,6 +37,7 @@ export default function RootLayout() {
           <Stack.Screen name="add-student" options={{ presentation: 'modal', headerShown: false }} />
           <Stack.Screen name="student/[id]" options={{ headerShown: false, animation: 'slide_from_right' }} />
           <Stack.Screen name="settings" options={{ presentation: 'modal', headerShown: false }} />
+          <Stack.Screen name="reset-password" options={{ headerShown: false }} />
         </Stack>
       </DataProvider>
     </GestureHandlerRootView>
