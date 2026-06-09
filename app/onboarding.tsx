@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width, height } = Dimensions.get('window');
 
@@ -17,12 +18,17 @@ export default function OnboardingScreen() {
   const [current, setCurrent] = useState(0);
   const flatRef = useRef<FlatList>(null);
 
+  const finish = async () => {
+    await AsyncStorage.setItem('hasSeenOnboarding', 'true');
+    router.replace('/login');
+  };
+
   const next = () => {
     if (current < SLIDES.length - 1) {
       flatRef.current?.scrollToIndex({ index: current + 1, animated: true });
       setCurrent(current + 1);
     } else {
-      router.replace('/(tabs)');
+      finish();
     }
   };
 
@@ -55,7 +61,7 @@ export default function OnboardingScreen() {
           <Ionicons name="chevron-forward" size={20} color="#0f1923" />
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.loginRow} onPress={() => router.replace('/(tabs)')}>
+        <TouchableOpacity style={styles.loginRow} onPress={finish}>
           <Text style={[styles.loginText, current === 1 && { color: 'rgba(0,0,0,0.5)' }]}>Already have an account? </Text>
           <Text style={[styles.loginLink, current === 1 && { color: '#d97706' }]}>Login</Text>
         </TouchableOpacity>
@@ -63,7 +69,7 @@ export default function OnboardingScreen() {
 
       {/* Skip button top-right */}
       <SafeAreaView edges={['top']} style={styles.skipSafe} pointerEvents="box-none">
-        <TouchableOpacity style={styles.skipBtn} onPress={() => router.replace('/(tabs)')}>
+        <TouchableOpacity style={styles.skipBtn} onPress={finish}>
           <Text style={styles.skipText}>Skip</Text>
         </TouchableOpacity>
       </SafeAreaView>
