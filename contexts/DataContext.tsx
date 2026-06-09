@@ -174,19 +174,19 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     // onAuthStateChange always fires INITIAL_SESSION on startup — use it as the
     // single source of truth so we never get stuck in a loading state
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+      if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         if (session) {
           fetchBatches();
           fetchStudents();
           loadProfile();
           reloadNotifs();
-        } else {
-          // No session — stop spinners so the app can redirect to login
+        } else if (event === 'INITIAL_SESSION') {
+          // No session on initial load — stop spinners so app redirects to login
           setBatchLoading(false);
           setStudentLoading(false);
         }
       }
-      if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+      if (event === 'USER_UPDATED') {
         loadProfile();
       }
       if (event === 'SIGNED_OUT') {
