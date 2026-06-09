@@ -138,10 +138,32 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    fetchBatches();
-    fetchStudents();
-    loadProfile();
-    reloadNotifs();
+    // On web the session may not be ready on mount — wait for it before fetching
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        fetchBatches();
+        fetchStudents();
+        loadProfile();
+        reloadNotifs();
+      }
+    });
+
+    // Also refetch when the user signs in (covers web redirect flow)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        fetchBatches();
+        fetchStudents();
+        loadProfile();
+        reloadNotifs();
+      }
+      if (event === 'SIGNED_OUT') {
+        setBatches([]);
+        setStudents([]);
+        setNotifs([]);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const addBatch = useCallback(async (batch: Omit<Batch, 'id' | 'created_at'>) => {
