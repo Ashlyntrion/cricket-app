@@ -9,6 +9,9 @@ export interface Notif {
   msg: string;
   time: string;
   route: string;
+  phone?: string;
+  amount?: number;
+  daysUntilDue?: number;
 }
 
 interface DataContextType {
@@ -81,10 +84,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const today = new Date().toISOString().slice(0, 10);
     const monthStr = new Date().toISOString().slice(0, 7);
 
-    // Load fee plans separately to avoid nested query FK resolution issues
     const [studentsRes, plansRes, paidRes] = await Promise.all([
-      supabase.from('students').select('id, name').eq('is_active', true),
-      supabase.from('fee_plans').select('student_id, due_day'),
+      supabase.from('students').select('id, name, phone').eq('is_active', true),
+      supabase.from('fee_plans').select('student_id, due_day, amount'),
       supabase.from('fee_payments').select('student_id').eq('for_month', monthStr),
     ]);
 
@@ -93,6 +95,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const paidIds = new Set((paidRes.data || []).map((p: any) => p.student_id));
     const now = new Date();
 
+    // Overdue fee notifications
     const feeNotifs: Notif[] = allStudents
       .filter((s) => {
         if (paidIds.has(s.id)) return false;
@@ -112,6 +115,36 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           msg: `Fee overdue by ${days} day${days !== 1 ? 's' : ''}`,
           time: `${days}d ago`,
           route: '/(tabs)/fees',
+          phone: s.phone ?? undefined,
+          amount: plan.amount,
+        };
+      });
+
+    // Due-in-3-days notifications
+    const dueSoonNotifs: Notif[] = allStudents
+      .filter((s) => {
+        if (paidIds.has(s.id)) return false;
+        const plan = planMap.get(s.id);
+        if (!plan || !plan.amount) return false;
+        const dueDate = new Date(now.getFullYear(), now.getMonth(), plan.due_day);
+        const diff = Math.ceil((dueDate.getTime() - now.getTime()) / 86400000);
+        return diff >= 0 && diff <= 3;
+      })
+      .slice(0, 5)
+      .map((s) => {
+        const plan = planMap.get(s.id);
+        const dueDate = new Date(now.getFullYear(), now.getMonth(), plan.due_day);
+        const days = Math.ceil((dueDate.getTime() - now.getTime()) / 86400000);
+        return {
+          id: `due-soon-${s.id}`,
+          type: 'fee' as const,
+          title: s.name,
+          msg: days === 0 ? 'Fee due today' : `Fee due in ${days} day${days !== 1 ? 's' : ''}`,
+          time: days === 0 ? 'Today' : `${days}d`,
+          route: '/(tabs)/fees',
+          phone: s.phone ?? undefined,
+          amount: plan.amount,
+          daysUntilDue: days,
         };
       });
 
@@ -134,7 +167,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         route: '/(tabs)/attendance',
       }));
     }
-    setNotifs([...feeNotifs, ...absentNotifs]);
+    setNotifs([...feeNotifs, ...dueSoonNotifs, ...absentNotifs]);
   }, []);
 
   useEffect(() => {

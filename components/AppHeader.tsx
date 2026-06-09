@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Modal,
-  Animated, Dimensions, ScrollView, TouchableWithoutFeedback, Alert,
+  Animated, Dimensions, ScrollView, TouchableWithoutFeedback, Alert, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -194,27 +194,55 @@ export function AppHeader({ title }: AppHeaderProps) {
               ) : (
                 <>
                   <Text style={styles.notifSection}>Action Required</Text>
-                  {notifs.map((n, i) => (
-                    <TouchableOpacity
-                      key={n.id + i}
-                      style={[styles.notifRow, i < notifs.length - 1 && { borderBottomWidth: 1, borderBottomColor: Colors.border }]}
-                      onPress={() => { setNotifOpen(false); setTimeout(() => router.push(n.route as any), 300); }}
-                      activeOpacity={0.7}
-                    >
-                      <View style={[styles.notifIconWrap, { backgroundColor: n.type === 'fee' ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)' }]}>
-                        <Ionicons
-                          name={n.type === 'fee' ? 'wallet' : 'people'}
-                          size={18}
-                          color={n.type === 'fee' ? Colors.danger : Colors.warning}
-                        />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.notifName}>{n.title}</Text>
-                        <Text style={styles.notifMsg}>{n.msg}</Text>
-                      </View>
-                      <Text style={styles.notifTime}>{n.time}</Text>
-                    </TouchableOpacity>
-                  ))}
+                  {notifs.map((n, i) => {
+                    const isDueSoon = n.phone && n.amount && n.daysUntilDue !== undefined;
+                    const isOverdue = n.phone && n.amount && n.daysUntilDue === undefined && n.type === 'fee';
+                    const hasWhatsApp = isDueSoon || isOverdue;
+
+                    const handleTap = () => {
+                      setNotifOpen(false);
+                      if (hasWhatsApp && n.phone) {
+                        const month = new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+                        const msg = isDueSoon
+                          ? `Hi ${n.title}, your cricket coaching fee of ₹${n.amount!.toLocaleString()} for ${month} is due in ${n.daysUntilDue} day${n.daysUntilDue !== 1 ? 's' : ''}. Please arrange the payment. – ${coachName}, ${academyName}`
+                          : `Hi ${n.title}, your cricket coaching fee of ₹${n.amount!.toLocaleString()} for ${month} is overdue. Please pay at the earliest. – ${coachName}, ${academyName}`;
+                        const phone = n.phone.replace(/\D/g, '');
+                        const dialCode = phone.length === 10 ? `91${phone}` : phone;
+                        setTimeout(() => Linking.openURL(`https://wa.me/${dialCode}?text=${encodeURIComponent(msg)}`), 300);
+                      } else {
+                        setTimeout(() => router.push(n.route as any), 300);
+                      }
+                    };
+
+                    return (
+                      <TouchableOpacity
+                        key={n.id + i}
+                        style={[styles.notifRow, i < notifs.length - 1 && { borderBottomWidth: 1, borderBottomColor: Colors.border }]}
+                        onPress={handleTap}
+                        activeOpacity={0.7}
+                      >
+                        <View style={[styles.notifIconWrap, {
+                          backgroundColor: n.daysUntilDue !== undefined
+                            ? 'rgba(245,158,11,0.1)'
+                            : n.type === 'fee' ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)',
+                        }]}>
+                          <Ionicons
+                            name={hasWhatsApp ? 'logo-whatsapp' : n.type === 'fee' ? 'wallet' : 'people'}
+                            size={18}
+                            color={n.daysUntilDue !== undefined ? Colors.warning : n.type === 'fee' ? Colors.danger : Colors.warning}
+                          />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.notifName}>{n.title}</Text>
+                          <Text style={styles.notifMsg}>{n.msg}</Text>
+                          {hasWhatsApp && (
+                            <Text style={styles.notifWaHint}>Tap to send WhatsApp reminder</Text>
+                          )}
+                        </View>
+                        <Text style={styles.notifTime}>{n.time}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </>
               )}
               <View style={{ height: 32 }} />
@@ -312,6 +340,7 @@ const styles = StyleSheet.create({
   notifIconWrap: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   notifName: { fontSize: 14, fontWeight: '700', color: Colors.text, marginBottom: 2 },
   notifMsg: { fontSize: 12, color: Colors.textSecondary },
+  notifWaHint: { fontSize: 11, color: '#25D366', fontWeight: '600', marginTop: 2 },
   notifTime: { fontSize: 11, color: Colors.textMuted },
   notifEmpty: { alignItems: 'center', paddingVertical: 32, gap: 8 },
   notifEmptyText: { fontSize: 16, fontWeight: '700', color: Colors.text },
