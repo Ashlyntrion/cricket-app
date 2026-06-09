@@ -19,9 +19,22 @@ export default function Root({ children }: { children: React.ReactNode }) {
         <link rel="apple-touch-icon" href="/favicon.png" />
 
         <style>{`
-          html { -webkit-text-size-adjust: 100%; }
-          body { margin: 0; padding: 0; }
-          #root { padding-bottom: env(safe-area-inset-bottom, 0px); }
+          html {
+            -webkit-text-size-adjust: 100%;
+            height: -webkit-fill-available;
+          }
+          body {
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            min-height: -webkit-fill-available;
+            min-height: 100dvh;
+          }
+          #root {
+            height: 100vh;
+            height: 100dvh;
+            overflow: hidden;
+          }
         `}</style>
 
         <ScrollViewStyleReset />
