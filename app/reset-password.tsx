@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator,
@@ -17,9 +17,38 @@ export default function ResetPasswordScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
+  const [sessionReady, setSessionReady] = useState(false);
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    // Check if session already exists (e.g. token already exchanged)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) { setSessionReady(true); setChecking(false); }
+    });
+
+    // Listen for PASSWORD_RECOVERY event fired when Supabase processes the URL token
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && session)) {
+        setSessionReady(true);
+        setChecking(false);
+      }
+    });
+
+    // Stop spinner after 5s if nothing happens (bad/expired link)
+    const timer = setTimeout(() => {
+      setChecking(false);
+      setError('This reset link has expired or is invalid. Please request a new one.');
+    }, 5000);
+
+    return () => { subscription.unsubscribe(); clearTimeout(timer); };
+  }, []);
 
   const handleReset = async () => {
     setError('');
+    if (!sessionReady) {
+      setError('Session expired. Please request a new reset link.');
+      return;
+    }
     if (!password || password.length < 6) {
       setError('Password must be at least 6 characters.');
       return;
@@ -49,7 +78,9 @@ export default function ResetPasswordScreen() {
           <Text style={styles.title}>New Password</Text>
           <Text style={styles.subtitle}>Enter a new password for your account</Text>
 
-          {done ? (
+          {checking ? (
+            <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 20 }} />
+          ) : done ? (
             <View style={styles.successBox}>
               <Ionicons name="checkmark-circle" size={22} color={Colors.primary} />
               <Text style={styles.successText}>Password updated! Redirecting…</Text>
