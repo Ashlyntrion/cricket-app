@@ -163,7 +163,13 @@ export default function StudentsScreen() {
                   <Text style={styles.attLabel}>Attendance</Text>
                 </View>
 
-                <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+                {pct > 0 && pct < 75 ? (
+                  <View style={styles.warnBadge}>
+                    <Ionicons name="warning" size={13} color={Colors.warning} />
+                  </View>
+                ) : (
+                  <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+                )}
               </TouchableOpacity>
             );
           }}
@@ -224,4 +230,9 @@ const styles = StyleSheet.create({
   attRight: { alignItems: 'center' },
   attPct: { fontSize: 18, fontWeight: '800' },
   attLabel: { fontSize: 10, color: Colors.textMuted, marginTop: 1 },
+  warnBadge: {
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: Colors.accentSurface,
+    alignItems: 'center', justifyContent: 'center',
+  },
 });

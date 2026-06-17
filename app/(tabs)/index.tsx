@@ -15,14 +15,16 @@ const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Go
 interface TodayStats { present: number; absent: number; late: number }
 interface FeeStats { collected: number; outstanding: number }
 interface NeedsAttention { id: string; name: string; msg: string; type: string }
+interface BatchStat { id: string; name: string; pct: number }
 
 export default function DashboardScreen() {
   const [todayStats, setTodayStats] = useState<TodayStats>({ present: 0, absent: 0, late: 0 });
   const [feeStats, setFeeStats] = useState<FeeStats>({ collected: 0, outstanding: 0 });
   const [needsAttention, setNeedsAttention] = useState<NeedsAttention[]>([]);
+  const [batchStats, setBatchStats] = useState<BatchStat[]>([]);
   const [streak, setStreak] = useState(0);
 
-  const { students } = useData();
+  const { students, batches } = useData();
 
   useEffect(() => {
     const today = new Date().toISOString().slice(0, 10);
@@ -82,38 +84,99 @@ export default function DashboardScreen() {
       setFeeStats({ collected, outstanding });
     });
 
-    // Students needing attention (overdue fees) — load plans separately to avoid nested query issues
+    // Needs attention: fee overdue + low attendance (< 75%)
+    const now2 = new Date();
+    const monthEnd = `${monthStr}-${new Date(now2.getFullYear(), now2.getMonth() + 1, 0).getDate()}`;
     Promise.all([
       supabase.from('students').select('id, name').eq('is_active', true),
       supabase.from('fee_plans').select('student_id, due_day, amount'),
       supabase.from('fee_payments').select('student_id').eq('for_month', monthStr),
-    ]).then(([studentRes, plansRes, paidRes]) => {
+      supabase.from('sessions').select('id').gte('date', `${monthStr}-01`).lte('date', monthEnd),
+    ]).then(async ([studentRes, plansRes, paidRes, sessionsRes]) => {
       const studentList = (studentRes.data || []) as any[];
       const planMap = new Map((plansRes.data || []).map((p: any) => [p.student_id, p]));
       const paidSet = new Set((paidRes.data || []).map((p: any) => p.student_id));
-      const now = new Date();
-      const overdue = studentList
+      const now3 = new Date();
+
+      const feeAlerts: NeedsAttention[] = studentList
         .filter((s) => {
           if (paidSet.has(s.id)) return false;
           const plan = planMap.get(s.id);
           if (!plan) return false;
-          return now > new Date(now.getFullYear(), now.getMonth(), plan.due_day);
+          return now3 > new Date(now3.getFullYear(), now3.getMonth(), plan.due_day);
         })
-        .slice(0, 3)
         .map((s) => {
           const plan = planMap.get(s.id);
-          const dueDate = new Date(now.getFullYear(), now.getMonth(), plan.due_day);
-          const days = Math.floor((now.getTime() - dueDate.getTime()) / 86400000);
-          return {
-            id: s.id,
-            name: s.name,
-            msg: `${days} day${days !== 1 ? 's' : ''} overdue on fee`,
-            type: 'fee',
-          };
+          const dueDate = new Date(now3.getFullYear(), now3.getMonth(), plan.due_day);
+          const days = Math.floor((now3.getTime() - dueDate.getTime()) / 86400000);
+          return { id: s.id, name: s.name, msg: `${days}d overdue on fee`, type: 'fee' };
         });
-      setNeedsAttention(overdue);
+
+      const sessionIds = (sessionsRes.data || []).map((s: any) => s.id);
+      let attAlerts: NeedsAttention[] = [];
+      if (sessionIds.length > 0) {
+        const { data: allAtt } = await supabase
+          .from('attendance').select('student_id, status').in('session_id', sessionIds);
+        const attMap: Record<string, { attended: number; total: number }> = {};
+        (allAtt || []).forEach((a: any) => {
+          if (!attMap[a.student_id]) attMap[a.student_id] = { attended: 0, total: 0 };
+          attMap[a.student_id].total++;
+          if (a.status === 'present' || a.status === 'late') attMap[a.student_id].attended++;
+        });
+        attAlerts = studentList
+          .filter((s) => {
+            const stat = attMap[s.id];
+            return stat && stat.total > 0 && Math.round((stat.attended / stat.total) * 100) < 75;
+          })
+          .map((s) => {
+            const stat = attMap[s.id];
+            const pct = Math.round((stat.attended / stat.total) * 100);
+            return { id: s.id, name: s.name, msg: `${pct}% attendance this month`, type: 'attendance' };
+          });
+      }
+
+      const seen = new Set<string>();
+      const combined = [...feeAlerts, ...attAlerts].filter((a) => {
+        if (seen.has(a.id)) return false;
+        seen.add(a.id);
+        return true;
+      }).slice(0, 6);
+      setNeedsAttention(combined);
     });
   }, [students.length]);
+
+  // Batch performance stats
+  useEffect(() => {
+    if (batches.length === 0) return;
+    const now = new Date();
+    const ms = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const me = `${ms}-${new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()}`;
+    supabase.from('sessions').select('id, batch_id').gte('date', `${ms}-01`).lte('date', me)
+      .then(async ({ data: sessions }) => {
+        if (!sessions || sessions.length === 0) return;
+        const sessionIds = sessions.map((s: any) => s.id);
+        const { data: allAtt } = await supabase
+          .from('attendance').select('session_id, status').in('session_id', sessionIds);
+        const sessionBatchMap = new Map((sessions as any[]).map((s) => [s.id, s.batch_id]));
+        const batchAtt: Record<string, { attended: number; total: number }> = {};
+        (allAtt || []).forEach((a: any) => {
+          const bid = sessionBatchMap.get(a.session_id);
+          if (!bid) return;
+          if (!batchAtt[bid]) batchAtt[bid] = { attended: 0, total: 0 };
+          batchAtt[bid].total++;
+          if (a.status === 'present' || a.status === 'late') batchAtt[bid].attended++;
+        });
+        setBatchStats(
+          batches
+            .map((b) => {
+              const s = batchAtt[b.id];
+              if (!s || s.total === 0) return null;
+              return { id: b.id, name: b.name, pct: Math.round((s.attended / s.total) * 100) };
+            })
+            .filter(Boolean) as BatchStat[]
+        );
+      });
+  }, [batches.length]);
 
   const totalFees = feeStats.collected + feeStats.outstanding;
   const collectedPct = totalFees > 0 ? Math.round((feeStats.collected / totalFees) * 100) : 0;
@@ -235,6 +298,27 @@ export default function DashboardScreen() {
           </View>
         </TouchableOpacity>
 
+        {/* Batch Performance */}
+        {batchStats.length > 0 && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Batch Performance (This Month)</Text>
+            {batchStats.map((b) => (
+              <View key={b.id} style={styles.batchRow}>
+                <Text style={styles.batchName}>{b.name}</Text>
+                <View style={styles.batchBarWrap}>
+                  <View style={[styles.batchBarFill, {
+                    width: `${b.pct}%` as any,
+                    backgroundColor: b.pct >= 75 ? Colors.primary : b.pct >= 50 ? Colors.warning : Colors.danger,
+                  }]} />
+                </View>
+                <Text style={[styles.batchPct, {
+                  color: b.pct >= 75 ? Colors.primary : b.pct >= 50 ? Colors.warning : Colors.danger,
+                }]}>{b.pct}%</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
         {/* Needs attention */}
         <View style={[styles.card, { marginBottom: 100 }]}>
           <Text style={styles.cardTitle}>Needs Attention</Text>
@@ -251,7 +335,9 @@ export default function DashboardScreen() {
                 onPress={() => router.push(`/student/${a.id}` as any)}
                 activeOpacity={0.7}
               >
-                <View style={[styles.alertDot, { backgroundColor: a.type === 'fee' ? Colors.danger : Colors.warning }]} />
+                <View style={[styles.alertDot, {
+                  backgroundColor: a.type === 'fee' ? Colors.danger : Colors.warning,
+                }]} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.alertName}>{a.name}</Text>
                   <Text style={styles.alertMsg}>{a.msg}</Text>
@@ -343,6 +429,11 @@ const styles = StyleSheet.create({
     width: 38, height: 38, borderRadius: 19,
     backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center',
   },
+  batchRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  batchName: { fontSize: 13, fontWeight: '600', color: Colors.text, width: 90 },
+  batchBarWrap: { flex: 1, height: 8, backgroundColor: Colors.border, borderRadius: 4, overflow: 'hidden' },
+  batchBarFill: { height: 8, borderRadius: 4 },
+  batchPct: { fontSize: 13, fontWeight: '700', width: 40, textAlign: 'right' },
   alertRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 12 },
   alertDot: { width: 8, height: 8, borderRadius: 4 },
   alertName: { fontSize: 14, fontWeight: '600', color: Colors.text },

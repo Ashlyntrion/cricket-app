@@ -35,8 +35,6 @@ export default function Root({ children }: { children: React.ReactNode }) {
             height: 100dvh;
             overflow: hidden;
           }
-          /* Space for floating tab bar */
-          .tab-content { padding-bottom: 90px; }
         `}</style>
 
         <ScrollViewStyleReset />

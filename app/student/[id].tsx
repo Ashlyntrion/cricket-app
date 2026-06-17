@@ -11,6 +11,9 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { Colors } from '../../constants/colors';
 import { FeeStatusBadge } from '../../components/FeeStatusBadge';
 import { SimpleBarChart } from '../../components/SimpleBarChart';
+import { WeeklyTrendChart } from '../../components/WeeklyTrendChart';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import { supabase } from '../../lib/supabase';
 import { useAttendance } from '../../hooks/useAttendance';
 import { useData } from '../../contexts/DataContext';
@@ -33,6 +36,7 @@ export default function StudentDetailScreen() {
   const [loading, setLoading] = useState(true);
 
   const [studentStreak, setStudentStreak] = useState(0);
+  const [weeklyTrend, setWeeklyTrend] = useState<{ label: string; value: number }[]>([]);
   const [showActionSheet, setShowActionSheet] = useState(false);
 
   // Calendar state
@@ -127,6 +131,51 @@ export default function StudentDetailScreen() {
         else break;
       }
       setStudentStreak(count);
+    }
+
+    // Weekly trend: last 8 weeks, per-session attendance grouped by week
+    const batchId = studentRes.data?.batch_id;
+    if (batchId) {
+      const eightWeeksAgo = new Date();
+      eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 56);
+      const weekStartStr = eightWeeksAgo.toISOString().slice(0, 10);
+      const todayStr = new Date().toISOString().slice(0, 10);
+
+      const { data: wSessions } = await supabase
+        .from('sessions').select('id, date')
+        .eq('batch_id', batchId)
+        .gte('date', weekStartStr).lte('date', todayStr);
+
+      const wSessionIds = (wSessions || []).map((s: any) => s.id);
+      const wSessionDateMap = new Map((wSessions || []).map((s: any) => [s.id, s.date as string]));
+
+      if (wSessionIds.length > 0) {
+        const { data: wAtt } = await supabase
+          .from('attendance').select('status, session_id')
+          .eq('student_id', id as string).in('session_id', wSessionIds);
+
+        const weekBuckets: Record<string, { attended: number; total: number }> = {};
+        (wAtt || []).forEach((att: any) => {
+          const date = wSessionDateMap.get(att.session_id);
+          if (!date) return;
+          const d = new Date(date + 'T00:00:00');
+          const day = d.getDay();
+          d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
+          const weekKey = d.toISOString().slice(0, 10);
+          if (!weekBuckets[weekKey]) weekBuckets[weekKey] = { attended: 0, total: 0 };
+          weekBuckets[weekKey].total++;
+          if (att.status === 'present' || att.status === 'late') weekBuckets[weekKey].attended++;
+        });
+
+        setWeeklyTrend(
+          Object.entries(weekBuckets)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([weekStart, s]) => ({
+              label: new Date(weekStart + 'T00:00:00').toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }),
+              value: s.total > 0 ? Math.round((s.attended / s.total) * 100) : 0,
+            }))
+        );
+      }
     }
 
     setLoading(false);
@@ -280,6 +329,61 @@ export default function StudentDetailScreen() {
     }
   };
 
+  const exportPDF = async () => {
+    if (!student) return;
+    const jd = student.join_date
+      ? new Date(student.join_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
+      : '—';
+    const monthRows = monthlyAtt.map((m) => {
+      const badge = m.value >= 75
+        ? `<span style="background:#dcfce7;color:#166534;border-radius:4px;padding:2px 8px;font-size:12px">Good</span>`
+        : m.value >= 50
+          ? `<span style="background:#fef3c7;color:#92400e;border-radius:4px;padding:2px 8px;font-size:12px">Average</span>`
+          : `<span style="background:#fee2e2;color:#991b1b;border-radius:4px;padding:2px 8px;font-size:12px">Low</span>`;
+      return `<tr><td>${m.label}</td><td>${m.value}%</td><td>${badge}</td></tr>`;
+    }).join('');
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <style>
+      body{font-family:Arial,sans-serif;padding:28px;color:#1a1a1a}
+      h1{color:#22c55e;margin:0 0 4px}
+      .sub{color:#666;font-size:14px;margin-bottom:20px}
+      .info{color:#555;font-size:13px;margin:3px 0}
+      .stat-grid{display:flex;gap:12px;margin:20px 0}
+      .stat-box{flex:1;background:#f9fafb;border-radius:8px;padding:14px;text-align:center;border:1px solid #e5e7eb}
+      .stat-num{font-size:26px;font-weight:700;color:#22c55e}
+      .stat-lbl{font-size:12px;color:#6b7280;margin-top:4px}
+      table{width:100%;border-collapse:collapse;margin-top:8px}
+      th{background:#22c55e;color:white;padding:10px 14px;text-align:left;font-size:13px}
+      td{padding:10px 14px;border-bottom:1px solid #e5e7eb;font-size:13px}
+      .footer{margin-top:32px;color:#9ca3af;font-size:11px;text-align:center;border-top:1px solid #e5e7eb;padding-top:16px}
+    </style></head><body>
+      <h1>${student.name}</h1>
+      <p class="sub">${student.batch?.name ?? ''} · Joined ${jd}</p>
+      <p class="info">📞 ${student.phone}</p>
+      ${student.email ? `<p class="info">✉️ ${student.email}</p>` : ''}
+      <div class="stat-grid">
+        <div class="stat-box"><div class="stat-num">${attendancePct}%</div><div class="stat-lbl">This Month</div></div>
+        <div class="stat-box"><div class="stat-num">🔥 ${studentStreak}</div><div class="stat-lbl">Day Streak</div></div>
+      </div>
+      <h3 style="margin-bottom:8px">Monthly Attendance (Last 6 Months)</h3>
+      <table>
+        <thead><tr><th>Month</th><th>Attendance</th><th>Status</th></tr></thead>
+        <tbody>${monthRows}</tbody>
+      </table>
+      <div class="footer">Generated by Cricket Academy · ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+    </body></html>`;
+    try {
+      if (Platform.OS === 'web') {
+        await Print.printAsync({ html });
+      } else {
+        const { uri } = await Print.printToFileAsync({ html });
+        await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
+      }
+    } catch {
+      Alert.alert('Export failed', 'Could not generate the report.');
+    }
+  };
+
   if (loading || deleting) {
     return (
       <SafeAreaView style={[styles.safe, { alignItems: 'center', justifyContent: 'center' }]} edges={['top']}>
@@ -380,13 +484,24 @@ export default function StudentDetailScreen() {
           </View>
         </View>
 
-        {/* Attendance chart */}
+        {/* Monthly bar chart */}
         {monthlyAtt.length > 0 && (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Attendance Trend</Text>
+            <Text style={styles.cardTitle}>Monthly Attendance</Text>
             <View style={{ marginTop: 12 }}>
               <SimpleBarChart data={monthlyAtt} maxValue={100} height={120} unit="%" />
             </View>
+          </View>
+        )}
+
+        {/* Weekly trend line chart */}
+        {weeklyTrend.length >= 2 && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Weekly Trend</Text>
+            <Text style={{ fontSize: 12, color: Colors.textSecondary, marginBottom: 10 }}>
+              Week-by-week · dashed line = 75% target
+            </Text>
+            <WeeklyTrendChart data={weeklyTrend} width={SCREEN_WIDTH - 64} />
           </View>
         )}
 
@@ -542,6 +657,11 @@ export default function StudentDetailScreen() {
             <TouchableOpacity style={styles.actionRow} onPress={() => { setShowActionSheet(false); setTimeout(() => openEdit(student, feePlan), 200); }}>
               <Ionicons name="create-outline" size={20} color={Colors.text} />
               <Text style={styles.actionText}>Edit Student</Text>
+            </TouchableOpacity>
+            <View style={styles.actionDivider} />
+            <TouchableOpacity style={styles.actionRow} onPress={() => { setShowActionSheet(false); setTimeout(() => exportPDF(), 200); }}>
+              <Ionicons name="document-text-outline" size={20} color={Colors.primary} />
+              <Text style={[styles.actionText, { color: Colors.primary }]}>Export Report (PDF)</Text>
             </TouchableOpacity>
             <View style={styles.actionDivider} />
             <TouchableOpacity style={styles.actionRow} onPress={() => { setShowActionSheet(false); setTimeout(() => confirmDelete(), 200); }}>

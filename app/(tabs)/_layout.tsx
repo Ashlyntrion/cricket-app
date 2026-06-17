@@ -69,14 +69,10 @@ export default function TabsLayout() {
 
 const styles = StyleSheet.create({
   wrapper: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
+    // No absolute positioning — sits naturally at bottom, content pushes up automatically
     paddingHorizontal: 16,
     paddingTop: 8,
-    // Transparent so page content shows through
+    backgroundColor: 'transparent',
   },
   bar: {
     flexDirection: 'row',
@@ -84,7 +80,6 @@ const styles = StyleSheet.create({
     borderRadius: 32,
     paddingHorizontal: 6,
     paddingVertical: 6,
-    width: '100%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.3,

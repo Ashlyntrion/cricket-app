@@ -320,10 +320,9 @@ const styles = StyleSheet.create({
   statusPill: { borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
   statusPillText: { fontSize: 11, fontWeight: '700' },
   footer: {
-    padding: 14, paddingBottom: 12, paddingTop: 10,
+    padding: 14, paddingBottom: 12,
     backgroundColor: Colors.surface,
     borderTopWidth: 1, borderTopColor: Colors.border,
-    marginBottom: 82,
   },
   celebBanner: {
     backgroundColor: Colors.primarySurface, borderRadius: 10,
