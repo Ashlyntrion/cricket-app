@@ -1,6 +1,9 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { Batch, Student } from '../types';
+import { cacheSet, cacheGet, getQueue } from '../lib/offlineStore';
+import { flushQueue } from '../lib/offlineSync';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
 
 export interface Notif {
   id: string;
@@ -41,6 +44,10 @@ interface DataContextType {
   coaches: CoachProfile[];
   refetchCoaches: () => void;
 
+  isOnline: boolean;
+  pendingSyncCount: number;
+  syncNow: () => Promise<void>;
+
   notifs: Notif[];
   reloadNotifs: () => void;
 }
@@ -57,24 +64,56 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [academyName, setAcademyName] = useState('Cricket Academy');
   const [userRole, setUserRole] = useState<'admin' | 'coach'>('coach');
   const [coaches, setCoaches] = useState<CoachProfile[]>([]);
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [notifs, setNotifs] = useState<Notif[]>([]);
 
+  const { isOnline, setOnReconnect } = useNetworkStatus();
+  const syncing = useRef(false);
+
+  const refreshSyncCount = useCallback(async () => {
+    const q = await getQueue();
+    setPendingSyncCount(q.length);
+  }, []);
+
   const fetchBatches = useCallback(async () => {
-    setBatchLoading(true);
-    const { data } = await supabase.from('batches').select('*').order('name');
-    setBatches(data || []);
-    setBatchLoading(false);
+    // Show cache immediately so the UI is usable offline
+    const cached = await cacheGet<Batch[]>('batches');
+    if (cached) { setBatches(cached); setBatchLoading(false); }
+    else setBatchLoading(true);
+
+    try {
+      const { data, error } = await supabase.from('batches').select('*').order('name');
+      if (!error && data) {
+        setBatches(data);
+        cacheSet('batches', data);
+      }
+    } catch {
+      // Stay on cached data when offline
+    } finally {
+      setBatchLoading(false);
+    }
   }, []);
 
   const fetchStudents = useCallback(async () => {
-    setStudentLoading(true);
-    const { data } = await supabase
-      .from('students')
-      .select('*, batch:batches(*)')
-      .eq('is_active', true)
-      .order('name');
-    setStudents(data || []);
-    setStudentLoading(false);
+    const cached = await cacheGet<Student[]>('students');
+    if (cached) { setStudents(cached); setStudentLoading(false); }
+    else setStudentLoading(true);
+
+    try {
+      const { data, error } = await supabase
+        .from('students')
+        .select('*, batch:batches(*)')
+        .eq('is_active', true)
+        .order('name');
+      if (!error && data) {
+        setStudents(data);
+        cacheSet('students', data);
+      }
+    } catch {
+      // Stay on cached data when offline
+    } finally {
+      setStudentLoading(false);
+    }
   }, []);
 
   const fetchCoaches = useCallback(async () => {
@@ -100,6 +139,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (profile?.role) setUserRole(profile.role as 'admin' | 'coach');
     fetchCoaches();
   }, [fetchCoaches]);
+
+  const syncNow = useCallback(async () => {
+    if (syncing.current) return;
+    syncing.current = true;
+    try {
+      await flushQueue();
+      await refreshSyncCount();
+    } finally {
+      syncing.current = false;
+    }
+  }, [refreshSyncCount]);
 
   const reloadNotifs = useCallback(async () => {
     const today = new Date().toISOString().slice(0, 10);
@@ -191,7 +241,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setNotifs([...feeNotifs, ...dueSoonNotifs, ...absentNotifs]);
   }, []);
 
+  // Auto-sync queued attendance whenever connectivity is restored
   useEffect(() => {
+    setOnReconnect(syncNow);
+  }, [setOnReconnect, syncNow]);
+
+  useEffect(() => {
+    refreshSyncCount();
     // onAuthStateChange always fires INITIAL_SESSION on startup — use it as the
     // single source of truth so we never get stuck in a loading state
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -259,8 +315,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     batches, batchLoading, addBatch, refetchBatches: fetchBatches,
     students, studentLoading, refetchStudents: fetchStudents, addStudent, updateStudent, archiveStudent,
     coachName, coachInitials, academyName, userRole, coaches, refetchCoaches: fetchCoaches,
+    isOnline, pendingSyncCount, syncNow,
     notifs, reloadNotifs,
-  }), [batches, batchLoading, students, studentLoading, coachName, coachInitials, academyName, userRole, coaches, notifs]);
+  }), [batches, batchLoading, students, studentLoading, coachName, coachInitials, academyName, userRole, coaches, isOnline, pendingSyncCount, notifs]);
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }

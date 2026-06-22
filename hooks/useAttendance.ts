@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { Attendance, AttendanceStatus } from '../types';
+import { enqueueAction } from '../lib/offlineStore';
 
 export function useAttendance() {
   const [loading, setLoading] = useState(false);
@@ -51,7 +52,7 @@ export function useAttendance() {
     batchId: string,
     date: string,
     records: { student_id: string; status: AttendanceStatus }[]
-  ) => {
+  ): Promise<{ success: boolean; queued?: boolean; error?: string }> => {
     setLoading(true);
     setError(null);
     try {
@@ -68,10 +69,16 @@ export function useAttendance() {
         .upsert(upsertData, { onConflict: 'session_id,student_id' });
 
       if (err) throw new Error(err.message);
-      return { success: true };
+      return { success: true, queued: false };
     } catch (e: any) {
-      setError(e.message);
-      return { success: false, error: e.message };
+      const msg: string = e?.message ?? '';
+      // Network errors → save to offline queue instead of failing
+      if (/fetch|network|failed to|connection/i.test(msg)) {
+        await enqueueAction({ type: 'mark_attendance', payload: { batch_id: batchId, date, records } });
+        return { success: true, queued: true };
+      }
+      setError(msg);
+      return { success: false, error: msg };
     } finally {
       setLoading(false);
     }

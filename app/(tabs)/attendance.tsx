@@ -35,7 +35,7 @@ export default function AttendanceScreen() {
   const celebAnim = useRef(new Animated.Value(0)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
 
-  const { batches, batchLoading, students, studentLoading } = useData();
+  const { batches, batchLoading, students, studentLoading, isOnline, pendingSyncCount, syncNow } = useData();
   const { markAttendance, getAttendanceForSession, loading: attLoading } = useAttendance();
 
   const displayDate = new Date();
@@ -116,22 +116,30 @@ export default function AttendanceScreen() {
     const result = await markAttendance(selectedBatch.id, isoDate, records);
 
     setTimeout(() => {
-      Alert.alert(
-        result.success ? 'Innings Complete! 🏏' : 'Save Failed',
-        result.success
-          ? `Session saved for ${selectedBatch.name}.\n\nPresent: ${presentCount} · Late: ${lateCount} · Absent: ${absentCount}`
-          : 'Could not save attendance. Please try again.',
-        [{
-          text: result.success ? 'Great!' : 'OK',
-          onPress: () => {
-            if (!result.success) {
-              setSubmitted(false);
-              celebAnim.setValue(0);
-              progressAnim.setValue(0);
-            }
-          },
-        }]
-      );
+      if (result.queued) {
+        Alert.alert(
+          'Saved Offline 📴',
+          `Attendance saved locally for ${selectedBatch.name}.\nWill sync automatically when you're back online.\n\nPresent: ${presentCount} · Late: ${lateCount} · Absent: ${absentCount}`,
+          [{ text: 'Got it' }]
+        );
+      } else {
+        Alert.alert(
+          result.success ? 'Innings Complete! 🏏' : 'Save Failed',
+          result.success
+            ? `Session saved for ${selectedBatch.name}.\n\nPresent: ${presentCount} · Late: ${lateCount} · Absent: ${absentCount}`
+            : 'Could not save attendance. Please try again.',
+          [{
+            text: result.success ? 'Great!' : 'OK',
+            onPress: () => {
+              if (!result.success) {
+                setSubmitted(false);
+                celebAnim.setValue(0);
+                progressAnim.setValue(0);
+              }
+            },
+          }]
+        );
+      }
     }, 1000);
   };
 
@@ -142,6 +150,20 @@ export default function AttendanceScreen() {
   return (
     <View style={styles.root}>
       <AppHeader title="Attendance" />
+
+      {/* Offline / pending sync banners */}
+      {!isOnline && (
+        <View style={styles.offlineBanner}>
+          <Ionicons name="cloud-offline-outline" size={15} color="white" />
+          <Text style={styles.offlineBannerText}>Offline — attendance will be saved locally</Text>
+        </View>
+      )}
+      {isOnline && pendingSyncCount > 0 && (
+        <TouchableOpacity style={styles.syncBanner} onPress={syncNow}>
+          <Ionicons name="sync-outline" size={15} color={Colors.primary} />
+          <Text style={styles.syncBannerText}>{pendingSyncCount} session{pendingSyncCount > 1 ? 's' : ''} pending sync — tap to sync now</Text>
+        </TouchableOpacity>
+      )}
 
       {/* Batch chips */}
       <View style={styles.batchRow}>
@@ -298,7 +320,7 @@ export default function AttendanceScreen() {
             activeOpacity={0.85}
           >
             <Text style={styles.inningsBtnText}>
-              {attLoading ? 'Saving… 🏏' : submitted ? 'Saved! 🏏' : dateOffset < 0 ? (hasExistingSession ? 'Update Session 🏏' : 'Create Session 🏏') : 'Innings Complete! 🏏'}
+              {attLoading ? 'Saving… 🏏' : submitted ? 'Saved! 🏏' : !isOnline ? 'Save Offline 📴' : dateOffset < 0 ? (hasExistingSession ? 'Update Session 🏏' : 'Create Session 🏏') : 'Innings Complete! 🏏'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -311,6 +333,17 @@ const CARD_W = (width - 14 * 2 - 10 * 2) / 3;
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
+  offlineBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#555', paddingHorizontal: 14, paddingVertical: 8,
+  },
+  offlineBannerText: { fontSize: 13, color: 'white', fontWeight: '600', flex: 1 },
+  syncBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: Colors.primarySurface, paddingHorizontal: 14, paddingVertical: 8,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
+  },
+  syncBannerText: { fontSize: 13, color: Colors.primary, fontWeight: '600', flex: 1 },
   batchRow: { paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4 },
   batchChips: { gap: 8, paddingBottom: 4 },
   batchChip: {
