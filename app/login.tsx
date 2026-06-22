@@ -58,7 +58,14 @@ export default function LoginScreen() {
     );
     setResetLoading(false);
     if (resetError) {
-      setError(resetError.message);
+      const msg = resetError.message.toLowerCase();
+      if (msg.includes('load failed') || msg.includes('network') || msg.includes('fetch')) {
+        setError('Network error. Check your internet connection and try again.');
+      } else if (msg.includes('redirect')) {
+        setError('Configuration error. Please contact support.');
+      } else {
+        setError(resetError.message);
+      }
     } else {
       setResetSent(true);
     }
