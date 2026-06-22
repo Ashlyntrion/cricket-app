@@ -8,6 +8,7 @@ import { DonutChart } from '../../components/DonutChart';
 import { AppHeader } from '../../components/AppHeader';
 import { supabase } from '../../lib/supabase';
 import { useData } from '../../contexts/DataContext';
+import { getTodayKey } from '../../components/DayPicker';
 
 const hour = new Date().getHours();
 const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
@@ -22,6 +23,7 @@ export default function DashboardScreen() {
   const [feeStats, setFeeStats] = useState<FeeStats>({ collected: 0, outstanding: 0 });
   const [needsAttention, setNeedsAttention] = useState<NeedsAttention[]>([]);
   const [batchStats, setBatchStats] = useState<BatchStat[]>([]);
+  const [todayBatches, setTodayBatches] = useState<{ id: string; name: string; marked: boolean }[]>([]);
   const [streak, setStreak] = useState(0);
 
   const { students, batches } = useData();
@@ -144,6 +146,19 @@ export default function DashboardScreen() {
       setNeedsAttention(combined);
     });
   }, [students.length]);
+
+  // Today's scheduled batches + whether attendance is marked
+  useEffect(() => {
+    if (batches.length === 0) return;
+    const todayKey = getTodayKey();
+    const scheduled = batches.filter((b) => (b.training_days || []).includes(todayKey));
+    if (scheduled.length === 0) { setTodayBatches([]); return; }
+    const today = new Date().toISOString().slice(0, 10);
+    supabase.from('sessions').select('batch_id').eq('date', today).then(({ data }) => {
+      const marked = new Set((data || []).map((s: any) => s.batch_id));
+      setTodayBatches(scheduled.map((b) => ({ id: b.id, name: b.name, marked: marked.has(b.id) })));
+    });
+  }, [batches.length]);
 
   // Batch performance stats
   useEffect(() => {
@@ -281,6 +296,29 @@ export default function DashboardScreen() {
             </>
           )}
         </View>
+
+        {/* Training Today */}
+        {todayBatches.length > 0 && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Training Today</Text>
+            {todayBatches.map((b, i) => (
+              <TouchableOpacity
+                key={b.id}
+                style={[styles.todayBatchRow, i < todayBatches.length - 1 && { borderBottomWidth: 1, borderBottomColor: Colors.border }]}
+                onPress={() => router.push('/(tabs)/attendance')}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.todayDot, { backgroundColor: b.marked ? Colors.primary : Colors.warning }]} />
+                <Text style={styles.todayBatchName}>{b.name}</Text>
+                <View style={[styles.todayBadge, { backgroundColor: b.marked ? Colors.primarySurface : Colors.accentSurface }]}>
+                  <Text style={[styles.todayBadgeText, { color: b.marked ? Colors.primary : Colors.warning }]}>
+                    {b.marked ? 'Marked ✓' : 'Pending'}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
         {/* Mark attendance CTA */}
         <TouchableOpacity style={styles.ctaCard} onPress={() => router.push('/(tabs)/attendance')} activeOpacity={0.85}>
@@ -429,6 +467,11 @@ const styles = StyleSheet.create({
     width: 38, height: 38, borderRadius: 19,
     backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center',
   },
+  todayBatchRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 10 },
+  todayDot: { width: 8, height: 8, borderRadius: 4 },
+  todayBatchName: { flex: 1, fontSize: 14, fontWeight: '600', color: Colors.text },
+  todayBadge: { borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 },
+  todayBadgeText: { fontSize: 12, fontWeight: '700' },
   batchRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
   batchName: { fontSize: 13, fontWeight: '600', color: Colors.text, width: 90 },
   batchBarWrap: { flex: 1, height: 8, backgroundColor: Colors.border, borderRadius: 4, overflow: 'hidden' },

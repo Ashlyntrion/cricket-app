@@ -9,6 +9,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { Colors } from '../constants/colors';
 import { supabase } from '../lib/supabase';
+import { useData } from '../contexts/DataContext';
+import { DayPicker, formatTrainingDays } from '../components/DayPicker';
 
 export default function SettingsScreen() {
   const [coachName, setCoachName] = useState('');
@@ -25,6 +27,24 @@ export default function SettingsScreen() {
   const [savingPassword, setSavingPassword] = useState(false);
 
   const [signingOut, setSigningOut] = useState(false);
+  const [batchDays, setBatchDays] = useState<Record<string, string[]>>({});
+  const [savingBatch, setSavingBatch] = useState<string | null>(null);
+
+  const { batches, refetchBatches } = useData();
+
+  useEffect(() => {
+    const map: Record<string, string[]> = {};
+    batches.forEach((b) => { map[b.id] = b.training_days || []; });
+    setBatchDays(map);
+  }, [batches.length]);
+
+  const saveBatchDays = async (batchId: string) => {
+    setSavingBatch(batchId);
+    await supabase.from('batches').update({ training_days: batchDays[batchId] || [] }).eq('id', batchId);
+    setSavingBatch(null);
+    refetchBatches();
+    Alert.alert('Saved', 'Training schedule updated.');
+  };
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -217,6 +237,39 @@ export default function SettingsScreen() {
               <Text style={styles.infoVal}>{Platform.OS === 'ios' ? 'iOS' : 'Android'}</Text>
             </View>
           </View>
+
+          {/* Manage Batches */}
+          {batches.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>Batch Schedules</Text>
+              {batches.map((b, i) => (
+                <View key={b.id} style={[{ marginBottom: 18 }, i === batches.length - 1 && { marginBottom: 0 }]}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <Text style={{ fontSize: 14, fontWeight: '700', color: Colors.text }}>{b.name}</Text>
+                    {batchDays[b.id]?.length > 0 && (
+                      <Text style={{ fontSize: 11, color: Colors.primary, fontWeight: '600' }}>
+                        {formatTrainingDays(batchDays[b.id])}
+                      </Text>
+                    )}
+                  </View>
+                  <DayPicker
+                    selected={batchDays[b.id] || []}
+                    onChange={(days) => setBatchDays((prev) => ({ ...prev, [b.id]: days }))}
+                  />
+                  <TouchableOpacity
+                    style={[styles.btn, { marginTop: 10, backgroundColor: Colors.primary }]}
+                    onPress={() => saveBatchDays(b.id)}
+                    disabled={savingBatch === b.id}
+                  >
+                    {savingBatch === b.id
+                      ? <ActivityIndicator size="small" color="white" />
+                      : <Text style={[styles.btnText, { color: 'white' }]}>Save Schedule</Text>
+                    }
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
 
           {/* Sign Out */}
           <View style={[styles.section, { marginBottom: 40 }]}>

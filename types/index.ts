@@ -7,6 +7,7 @@ export interface Batch {
   name: string;
   schedule: string;
   time: string;
+  training_days: string[];
   created_at: string;
 }
 

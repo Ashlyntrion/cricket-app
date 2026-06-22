@@ -11,6 +11,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../constants/colors';
 import { supabase } from '../lib/supabase';
 import { useData } from '../contexts/DataContext';
+import { DayPicker, formatTrainingDays } from '../components/DayPicker';
 
 export default function AddStudentScreen() {
   const [name, setName] = useState('');
@@ -25,7 +26,7 @@ export default function AddStudentScreen() {
   // Create batch modal
   const [showCreateBatch, setShowCreateBatch] = useState(false);
   const [newBatchName, setNewBatchName] = useState('');
-  const [newBatchSchedule, setNewBatchSchedule] = useState('');
+  const [newBatchDays, setNewBatchDays] = useState<string[]>([]);
   const [newBatchTime, setNewBatchTime] = useState('');
   const [creatingBatch, setCreatingBatch] = useState(false);
 
@@ -100,8 +101,9 @@ export default function AddStudentScreen() {
     setCreatingBatch(true);
     const { data: newBatch, error } = await addBatch({
       name: newBatchName.trim(),
-      schedule: newBatchSchedule.trim() || '',
+      schedule: '',
       time: newBatchTime.trim() || '',
+      training_days: newBatchDays,
     });
     setCreatingBatch(false);
     if (error || !newBatch) {
@@ -111,7 +113,7 @@ export default function AddStudentScreen() {
     setSelectedBatch(newBatch.id);
     setShowCreateBatch(false);
     setNewBatchName('');
-    setNewBatchSchedule('');
+    setNewBatchDays([]);
     setNewBatchTime('');
   };
 
@@ -219,9 +221,9 @@ export default function AddStudentScreen() {
                     <Text style={[styles.batchName, selectedBatch === b.id && styles.batchNameActive]}>
                       {b.name}
                     </Text>
-                    {(b.schedule || b.time) ? (
+                    {(b.training_days?.length > 0 || b.time) ? (
                       <Text style={styles.batchTime}>
-                        {[b.schedule, b.time].filter(Boolean).join(' · ')}
+                        {[b.training_days?.length > 0 ? formatTrainingDays(b.training_days) : null, b.time].filter(Boolean).join(' · ')}
                       </Text>
                     ) : null}
                   </View>
@@ -284,14 +286,13 @@ export default function AddStudentScreen() {
               </View>
 
               <View style={styles.modalField}>
-                <Text style={styles.label}>Schedule (optional)</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g. Mon / Wed / Fri"
-                  placeholderTextColor={Colors.textLight}
-                  value={newBatchSchedule}
-                  onChangeText={setNewBatchSchedule}
-                />
+                <Text style={styles.label}>Training Days</Text>
+                <DayPicker selected={newBatchDays} onChange={setNewBatchDays} />
+                {newBatchDays.length > 0 && (
+                  <Text style={{ fontSize: 12, color: Colors.primary, marginTop: 6, fontWeight: '600' }}>
+                    {formatTrainingDays(newBatchDays)}
+                  </Text>
+                )}
               </View>
 
               <View style={styles.modalField}>

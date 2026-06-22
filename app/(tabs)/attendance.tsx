@@ -9,6 +9,7 @@ import { AttendanceStatus, Batch } from '../../types';
 import { AppHeader } from '../../components/AppHeader';
 import { useData } from '../../contexts/DataContext';
 import { useAttendance } from '../../hooks/useAttendance';
+import { getTodayKey, formatTrainingDays } from '../../components/DayPicker';
 
 const { width } = Dimensions.get('window');
 
@@ -44,10 +45,13 @@ export default function AttendanceScreen() {
     weekday: 'short', day: 'numeric', month: 'long', year: 'numeric',
   });
 
-  // Set default batch once loaded
+  const todayKey = getTodayKey();
+
+  // Auto-select a batch scheduled for today, else first batch
   useEffect(() => {
     if (batches.length > 0 && !selectedBatch) {
-      setSelectedBatch(batches[0]);
+      const scheduled = batches.find((b) => (b.training_days || []).includes(todayKey));
+      setSelectedBatch(scheduled ?? batches[0]);
     }
   }, [batches]);
 
@@ -145,20 +149,47 @@ export default function AttendanceScreen() {
           {batchLoading ? (
             <ActivityIndicator size="small" color={Colors.primary} style={{ marginLeft: 8 }} />
           ) : (
-            batches.map((b) => (
-              <TouchableOpacity
-                key={b.id}
-                style={[styles.batchChip, selectedBatch?.id === b.id && styles.batchChipActive]}
-                onPress={() => setSelectedBatch(b)}
-              >
-                <Text style={[styles.batchChipText, selectedBatch?.id === b.id && styles.batchChipTextActive]}>
-                  {b.name}
-                </Text>
-              </TouchableOpacity>
-            ))
+            batches.map((b) => {
+              const isToday = (b.training_days || []).includes(todayKey);
+              const isActive = selectedBatch?.id === b.id;
+              return (
+                <TouchableOpacity
+                  key={b.id}
+                  style={[styles.batchChip, isActive && styles.batchChipActive]}
+                  onPress={() => setSelectedBatch(b)}
+                >
+                  {isToday && <View style={[styles.todayDot, isActive && { backgroundColor: 'white' }]} />}
+                  <Text style={[styles.batchChipText, isActive && styles.batchChipTextActive]}>
+                    {b.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })
           )}
         </ScrollView>
       </View>
+
+      {/* Schedule info */}
+      {selectedBatch && (
+        <View style={styles.scheduleBar}>
+          {(selectedBatch.training_days || []).length > 0 ? (
+            <>
+              {(selectedBatch.training_days || []).includes(todayKey) ? (
+                <View style={styles.scheduledToday}>
+                  <View style={styles.scheduledDot} />
+                  <Text style={styles.scheduledTodayText}>Scheduled today · {formatTrainingDays(selectedBatch.training_days)}</Text>
+                </View>
+              ) : (
+                <View style={styles.notScheduled}>
+                  <Text style={styles.notScheduledText}>Not a training day · {formatTrainingDays(selectedBatch.training_days)}</Text>
+                </View>
+              )}
+            </>
+          ) : (
+            <Text style={styles.noScheduleText}>No schedule set for this batch</Text>
+          )}
+        </View>
+      )}
 
       {/* Date navigation */}
       <View style={styles.dateRow}>
@@ -285,10 +316,21 @@ const styles = StyleSheet.create({
   batchChip: {
     paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
     backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
   },
   batchChipActive: { backgroundColor: Colors.primarySurface, borderColor: Colors.primary },
   batchChipText: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600' },
   batchChipTextActive: { color: Colors.primary },
+  todayDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: Colors.primary },
+  scheduleBar: {
+    paddingHorizontal: 14, paddingBottom: 6,
+  },
+  scheduledToday: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  scheduledDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.primary },
+  scheduledTodayText: { fontSize: 12, color: Colors.primary, fontWeight: '600' },
+  notScheduled: {},
+  notScheduledText: { fontSize: 12, color: Colors.warning, fontWeight: '600' },
+  noScheduleText: { fontSize: 12, color: Colors.textMuted },
   dateRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 14, paddingVertical: 10,
