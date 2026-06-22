@@ -14,6 +14,13 @@ export interface Notif {
   daysUntilDue?: number;
 }
 
+export interface CoachProfile {
+  id: string;
+  full_name: string;
+  email: string | null;
+  role: 'admin' | 'coach';
+}
+
 interface DataContextType {
   batches: Batch[];
   batchLoading: boolean;
@@ -30,6 +37,9 @@ interface DataContextType {
   coachName: string;
   coachInitials: string;
   academyName: string;
+  userRole: 'admin' | 'coach';
+  coaches: CoachProfile[];
+  refetchCoaches: () => void;
 
   notifs: Notif[];
   reloadNotifs: () => void;
@@ -45,6 +55,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [coachName, setCoachName] = useState('Coach');
   const [coachInitials, setCoachInitials] = useState('CO');
   const [academyName, setAcademyName] = useState('Cricket Academy');
+  const [userRole, setUserRole] = useState<'admin' | 'coach'>('coach');
+  const [coaches, setCoaches] = useState<CoachProfile[]>([]);
   const [notifs, setNotifs] = useState<Notif[]>([]);
 
   const fetchBatches = useCallback(async () => {
@@ -65,6 +77,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setStudentLoading(false);
   }, []);
 
+  const fetchCoaches = useCallback(async () => {
+    const { data } = await supabase.from('profiles').select('id, full_name, email, role').order('role');
+    setCoaches((data as CoachProfile[]) || []);
+  }, []);
+
   const loadProfile = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -78,7 +95,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         ? (words[0][0] + words[words.length - 1][0]).toUpperCase()
         : name.slice(0, 2).toUpperCase()
     );
-  }, []);
+    // Load role from profiles table
+    const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+    if (profile?.role) setUserRole(profile.role as 'admin' | 'coach');
+    fetchCoaches();
+  }, [fetchCoaches]);
 
   const reloadNotifs = useCallback(async () => {
     const today = new Date().toISOString().slice(0, 10);
@@ -237,9 +258,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo(() => ({
     batches, batchLoading, addBatch, refetchBatches: fetchBatches,
     students, studentLoading, refetchStudents: fetchStudents, addStudent, updateStudent, archiveStudent,
-    coachName, coachInitials, academyName,
+    coachName, coachInitials, academyName, userRole, coaches, refetchCoaches: fetchCoaches,
     notifs, reloadNotifs,
-  }), [batches, batchLoading, students, studentLoading, coachName, coachInitials, academyName, notifs]);
+  }), [batches, batchLoading, students, studentLoading, coachName, coachInitials, academyName, userRole, coaches, notifs]);
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }

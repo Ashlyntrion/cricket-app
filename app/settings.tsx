@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, StyleSheet, TouchableOpacity,
   ScrollView, Alert, KeyboardAvoidingView, Platform,
-  ActivityIndicator,
+  ActivityIndicator, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -30,7 +30,12 @@ export default function SettingsScreen() {
   const [batchDays, setBatchDays] = useState<Record<string, string[]>>({});
   const [savingBatch, setSavingBatch] = useState<string | null>(null);
 
-  const { batches, refetchBatches } = useData();
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteName, setInviteName] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviting, setInviting] = useState(false);
+
+  const { batches, refetchBatches, userRole, coaches, refetchCoaches } = useData();
 
   useEffect(() => {
     const map: Record<string, string[]> = {};
@@ -44,6 +49,36 @@ export default function SettingsScreen() {
     setSavingBatch(null);
     refetchBatches();
     Alert.alert('Saved', 'Training schedule updated.');
+  };
+
+  const handleInviteCoach = async () => {
+    if (!inviteName.trim() || !inviteEmail.trim()) return;
+    setInviting(true);
+    const { error } = await supabase.functions.invoke('invite-coach', {
+      body: { email: inviteEmail.trim().toLowerCase(), full_name: inviteName.trim() },
+    });
+    setInviting(false);
+    if (error) {
+      Alert.alert('Error', error.message || 'Could not send invite. Make sure the Edge Function is deployed.');
+      return;
+    }
+    setShowInviteModal(false);
+    setInviteName('');
+    setInviteEmail('');
+    refetchCoaches();
+    Alert.alert('Invite Sent!', `${inviteName} will receive an email to set up their account.`);
+  };
+
+  const handleRemoveCoach = (coachId: string, name: string) => {
+    Alert.alert('Remove Coach', `Remove ${name} from the academy?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove', style: 'destructive', onPress: async () => {
+          await supabase.from('profiles').delete().eq('id', coachId);
+          refetchCoaches();
+        },
+      },
+    ]);
   };
 
   useEffect(() => {
@@ -238,6 +273,51 @@ export default function SettingsScreen() {
             </View>
           </View>
 
+          {/* Coaches — admin only */}
+          {userRole === 'admin' && (
+            <View style={styles.section}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                <Text style={styles.sectionLabel}>Coaches</Text>
+                <TouchableOpacity
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.primarySurface, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}
+                  onPress={() => setShowInviteModal(true)}
+                >
+                  <Ionicons name="person-add-outline" size={14} color={Colors.primary} />
+                  <Text style={{ fontSize: 12, color: Colors.primary, fontWeight: '700' }}>Invite Coach</Text>
+                </TouchableOpacity>
+              </View>
+              {coaches.length === 0 ? (
+                <Text style={{ fontSize: 13, color: Colors.textSecondary }}>No coaches yet. Invite one above.</Text>
+              ) : (
+                coaches.map((c) => (
+                  <View key={c.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
+                    <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: c.role === 'admin' ? Colors.primarySurface : Colors.background, alignItems: 'center', justifyContent: 'center', marginRight: 12, borderWidth: 1, borderColor: Colors.border }}>
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: Colors.primary }}>
+                        {c.full_name.split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '600', color: Colors.text }}>{c.full_name}</Text>
+                      {c.email && <Text style={{ fontSize: 12, color: Colors.textSecondary }}>{c.email}</Text>}
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <View style={{ backgroundColor: c.role === 'admin' ? Colors.primarySurface : Colors.background, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: c.role === 'admin' ? Colors.primary : Colors.border }}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: c.role === 'admin' ? Colors.primary : Colors.textSecondary }}>
+                          {c.role === 'admin' ? 'Admin' : 'Coach'}
+                        </Text>
+                      </View>
+                      {c.role !== 'admin' && (
+                        <TouchableOpacity onPress={() => handleRemoveCoach(c.id, c.full_name)}>
+                          <Ionicons name="trash-outline" size={16} color={Colors.danger} />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                ))
+              )}
+            </View>
+          )}
+
           {/* Manage Batches */}
           {batches.length > 0 && (
             <View style={styles.section}>
@@ -292,6 +372,62 @@ export default function SettingsScreen() {
 
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Invite Coach Modal */}
+      <Modal visible={showInviteModal} transparent animationType="slide" onRequestClose={() => setShowInviteModal(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowInviteModal(false)}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <View style={styles.modalSheet}>
+              <View style={styles.modalHandle} />
+              <Text style={styles.modalTitle}>Invite a Coach</Text>
+              <Text style={{ fontSize: 13, color: Colors.textSecondary, marginBottom: 16 }}>
+                They'll receive an email to set up their account and can log in to see all students, batches, and attendance.
+              </Text>
+
+              <View style={styles.field}>
+                <Text style={styles.label}>Full Name</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g. Ravi Sharma"
+                  placeholderTextColor={Colors.textLight}
+                  value={inviteName}
+                  onChangeText={setInviteName}
+                  autoFocus
+                />
+              </View>
+
+              <View style={styles.field}>
+                <Text style={styles.label}>Email Address</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="coach@gmail.com"
+                  placeholderTextColor={Colors.textLight}
+                  value={inviteEmail}
+                  onChangeText={setInviteEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[styles.btn, { backgroundColor: Colors.primary, marginTop: 8 }, (!inviteName.trim() || !inviteEmail.trim()) && { backgroundColor: Colors.border }]}
+                onPress={handleInviteCoach}
+                disabled={!inviteName.trim() || !inviteEmail.trim() || inviting}
+              >
+                {inviting
+                  ? <ActivityIndicator size="small" color="white" />
+                  : (
+                    <>
+                      <Ionicons name="paper-plane-outline" size={16} color="white" />
+                      <Text style={[styles.btnText, { color: 'white' }]}>Send Invite</Text>
+                    </>
+                  )
+                }
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -347,4 +483,11 @@ const styles = StyleSheet.create({
   },
   infoKey: { fontSize: 14, color: Colors.textSecondary },
   infoVal: { fontSize: 14, fontWeight: '600', color: Colors.text },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  modalSheet: {
+    backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    padding: 20, paddingBottom: 36,
+  },
+  modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.border, alignSelf: 'center', marginBottom: 16 },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: Colors.text, marginBottom: 8 },
 });
