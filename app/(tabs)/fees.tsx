@@ -266,37 +266,50 @@ export default function FeesScreen() {
             ) : (
               displayed.map((fee) => {
                 const sub = statusSubtext(fee);
+                const unpaid = fee.status !== 'paid' && fee.amount > 0;
                 return (
                   <View key={fee.id} style={styles.feeCard}>
-                    <View style={styles.feeAvatar}>
-                      <Text style={styles.feeInitials}>{getInitials(fee.name)}</Text>
+                    {/* Top row: avatar / name / amount + icon */}
+                    <View style={styles.feeCardTop}>
+                      <View style={styles.feeAvatar}>
+                        <Text style={styles.feeInitials}>{getInitials(fee.name)}</Text>
+                      </View>
+                      <View style={styles.feeInfo}>
+                        <Text style={styles.feeName}>{fee.name}</Text>
+                        <Text style={styles.feeBatch}>{fee.batch}</Text>
+                        <Text style={[styles.feeSubtext, { color: sub.color }]}>{sub.text}</Text>
+                      </View>
+                      <View style={styles.feeRight}>
+                        <Text style={styles.feeAmt}>{fee.amount > 0 ? `₹${fee.amount.toLocaleString()}` : '—'}</Text>
+                        {statusIcon(fee)}
+                      </View>
                     </View>
-                    <View style={styles.feeInfo}>
-                      <Text style={styles.feeName}>{fee.name}</Text>
-                      <Text style={styles.feeBatch}>{fee.batch}</Text>
-                      <Text style={[styles.feeSubtext, { color: sub.color }]}>{sub.text}</Text>
-                    </View>
-                    <View style={styles.feeRight}>
-                      <Text style={styles.feeAmt}>{fee.amount > 0 ? `₹${fee.amount.toLocaleString()}` : '—'}</Text>
-                      {statusIcon(fee)}
-                      {fee.status !== 'paid' && fee.amount > 0 && (
-                        <View style={styles.feeActions}>
-                          <TouchableOpacity style={styles.waBtn} onPress={() => sendWhatsApp(fee)}>
-                            <Ionicons name="logo-whatsapp" size={14} color="white" />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={styles.payBtn}
-                            onPress={() => handlePayFromCard(fee)}
-                            disabled={savingId === fee.id}
-                          >
-                            {savingId === fee.id
-                              ? <ActivityIndicator size="small" color="white" />
-                              : <Text style={styles.payBtnText}>Pay</Text>
-                            }
-                          </TouchableOpacity>
-                        </View>
-                      )}
-                    </View>
+
+                    {/* Action row — only for unpaid/overdue with a fee plan */}
+                    {unpaid && (
+                      <View style={styles.feeActions}>
+                        <TouchableOpacity style={styles.waBtn} onPress={() => sendWhatsApp(fee)}>
+                          <Ionicons name="logo-whatsapp" size={16} color="white" />
+                          <Text style={styles.waBtnText}>Remind</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.payBtn}
+                          onPress={() => handlePayFromCard(fee)}
+                          disabled={savingId === fee.id}
+                          activeOpacity={0.75}
+                        >
+                          {savingId === fee.id
+                            ? <ActivityIndicator size="small" color="white" />
+                            : (
+                              <>
+                                <Ionicons name="checkmark-circle-outline" size={16} color="white" />
+                                <Text style={styles.payBtnText}>Mark as Paid</Text>
+                              </>
+                            )
+                          }
+                        </TouchableOpacity>
+                      </View>
+                    )}
                   </View>
                 );
               })
@@ -459,9 +472,12 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   list: { paddingHorizontal: 14, gap: 10 },
   feeCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: Colors.surface, borderRadius: 14, padding: 14,
+    backgroundColor: Colors.surface, borderRadius: 14,
     borderWidth: 1, borderColor: Colors.border,
+    overflow: 'hidden',
+  },
+  feeCardTop: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14,
   },
   feeAvatar: {
     width: 44, height: 44, borderRadius: 22,
@@ -472,15 +488,21 @@ const styles = StyleSheet.create({
   feeName: { fontSize: 14, fontWeight: '700', color: Colors.text, marginBottom: 2 },
   feeBatch: { fontSize: 12, color: Colors.textSecondary, marginBottom: 3 },
   feeSubtext: { fontSize: 12, fontWeight: '600' },
-  feeRight: { alignItems: 'flex-end', gap: 5 },
+  feeRight: { alignItems: 'flex-end', gap: 4 },
   feeAmt: { fontSize: 15, fontWeight: '800', color: Colors.text },
-  feeActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  waBtn: {
-    backgroundColor: '#25D366', borderRadius: 6,
-    padding: 6, alignItems: 'center', justifyContent: 'center',
+  feeActions: {
+    flexDirection: 'row', borderTopWidth: 1, borderTopColor: Colors.border,
   },
-  payBtn: { backgroundColor: Colors.primary, borderRadius: 6, paddingHorizontal: 12, paddingVertical: 5 },
-  payBtnText: { color: 'white', fontSize: 12, fontWeight: '700' },
+  waBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: '#25D366', paddingVertical: 12, paddingHorizontal: 16,
+  },
+  waBtnText: { color: 'white', fontSize: 13, fontWeight: '700' },
+  payBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: Colors.primary, paddingVertical: 12,
+  },
+  payBtnText: { color: 'white', fontSize: 13, fontWeight: '700' },
   fabRow: { padding: 14, paddingBottom: 12 },
   fab: {
     backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 16,
