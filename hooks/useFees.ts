@@ -37,14 +37,32 @@ export function useFees() {
 
   const recordPayment = async (payment: Omit<FeePayment, 'id' | 'created_at' | 'student'>) => {
     setLoading(true);
-    const { data, error: err } = await supabase
+    // Check for existing payment first — avoids depending on a DB unique constraint
+    const { data: existing } = await supabase
       .from('fee_payments')
-      .upsert(payment, { onConflict: 'student_id,for_month' })
-      .select('*, student:students(*)')
-      .single();
+      .select('id')
+      .eq('student_id', payment.student_id)
+      .eq('for_month', payment.for_month)
+      .maybeSingle();
+
+    let result;
+    if (existing) {
+      result = await supabase
+        .from('fee_payments')
+        .update({ amount: payment.amount, payment_date: payment.payment_date })
+        .eq('id', existing.id)
+        .select('*, student:students(*)')
+        .single();
+    } else {
+      result = await supabase
+        .from('fee_payments')
+        .insert(payment)
+        .select('*, student:students(*)')
+        .single();
+    }
     setLoading(false);
-    if (err) setError(err.message);
-    return { data, error: err };
+    if (result.error) setError(result.error.message);
+    return { data: result.data, error: result.error };
   };
 
   const deletePayment = async (id: string) => {

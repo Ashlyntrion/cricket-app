@@ -39,6 +39,7 @@ export default function FeesScreen() {
   const [reminderModal, setReminderModal] = useState(false);
   const [dueSoonFees, setDueSoonFees] = useState<FeeRecord[]>([]);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const reminderShownRef = useRef(false);
 
   const { recordPayment } = useFees();
@@ -152,6 +153,7 @@ export default function FeesScreen() {
     : fees;
 
   const doMarkPaid = async (fee: FeeRecord) => {
+    setSaveError(null);
     setSavingId(fee.id);
     const { error } = await recordPayment({
       student_id: fee.id,
@@ -161,7 +163,7 @@ export default function FeesScreen() {
     });
     setSavingId(null);
     if (error) {
-      Alert.alert('Error', 'Could not record payment. Please try again.');
+      setSaveError('Could not record payment. Please try again.');
     } else {
       setFees((prev) =>
         prev.map((f) =>
@@ -231,6 +233,16 @@ export default function FeesScreen() {
         </View>
       </View>
 
+      {saveError && (
+        <View style={styles.errorBanner}>
+          <Ionicons name="alert-circle" size={16} color="white" />
+          <Text style={styles.errorBannerText}>{saveError}</Text>
+          <TouchableOpacity onPress={() => setSaveError(null)}>
+            <Ionicons name="close" size={16} color="white" />
+          </TouchableOpacity>
+        </View>
+      )}
+
       {dataLoading ? (
         <View style={styles.loadingWrap}>
           <ActivityIndicator size="large" color={Colors.primary} />
@@ -297,7 +309,7 @@ export default function FeesScreen() {
 
       <Modal visible={payModalVisible} transparent animationType="slide" onRequestClose={() => setPayModalVisible(false)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setPayModalVisible(false)}>
-          <View style={styles.modalSheet}>
+          <TouchableOpacity activeOpacity={1} style={styles.modalSheet}>
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>Record Payment</Text>
             <Text style={styles.modalSub}>Select a student to mark as paid</Text>
@@ -324,7 +336,7 @@ export default function FeesScreen() {
                 <Text style={styles.modalEmpty}>All payments are collected! 🎉</Text>
               )}
             </ScrollView>
-          </View>
+          </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
 
@@ -400,6 +412,12 @@ const styles = StyleSheet.create({
   statCardMid: { borderTopWidth: 3, borderTopColor: Colors.warning },
   statAmt: { fontSize: 16, fontWeight: '800', marginBottom: 3 },
   statLbl: { fontSize: 11, color: Colors.textSecondary },
+  errorBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: Colors.danger, marginHorizontal: 14, marginBottom: 8,
+    borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
+  },
+  errorBannerText: { flex: 1, color: 'white', fontSize: 13, fontWeight: '600' },
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyWrap: { alignItems: 'center', paddingVertical: 48, gap: 10 },
   emptyText: { fontSize: 15, color: Colors.textSecondary, fontWeight: '500' },
