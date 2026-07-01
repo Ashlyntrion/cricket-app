@@ -81,17 +81,24 @@ export default function StudentDetailScreen() {
     setFeePlan(planRes.data);
     setFeePayment(paymentRes.data);
 
-    const sessions = ((attRes.data || []) as any[])
-      .filter((r) => r.session?.date)
-      .sort((a, b) => new Date(b.session.date).getTime() - new Date(a.session.date).getTime())
-      .slice(0, 5)
-      .map((r) => ({
-        date: new Date(r.session.date).toLocaleDateString('en-IN', {
-          weekday: 'short', day: 'numeric', month: 'short',
-        }),
-        status: r.status as keyof typeof STATUS_CONFIG,
-      }));
+    const attRecords = ((attRes.data || []) as any[]).filter((r) => r.session?.date);
+    const sorted = [...attRecords].sort(
+      (a, b) => new Date(b.session.date).getTime() - new Date(a.session.date).getTime()
+    );
+    const sessions = sorted.slice(0, 5).map((r) => ({
+      date: new Date(r.session.date).toLocaleDateString('en-IN', {
+        weekday: 'short', day: 'numeric', month: 'short',
+      }),
+      status: r.status as keyof typeof STATUS_CONFIG,
+    }));
     setRecentSessions(sessions);
+
+    // Jump calendar to the month of the most recent attendance record so data is
+    // visible straight away instead of showing the (possibly empty) current month.
+    if (sorted.length > 0) {
+      const mostRecentDate = (sorted[0].session.date as string).slice(0, 7);
+      setCalMonth(mostRecentDate);
+    }
 
     const thisMonthStats = await getStudentAttendanceStats(id as string, monthStr);
     setAttendancePct(thisMonthStats.percentage);
@@ -194,36 +201,45 @@ export default function StudentDetailScreen() {
     const lastDay = new Date(year, m, 0).getDate();
     const endDate = `${month}-${String(lastDay).padStart(2, '0')}`;
 
-    // Only sessions for this student's batch
-    const { data: sessions } = await supabase
-      .from('sessions')
-      .select('id, date')
-      .eq('batch_id', batchId)
-      .gte('date', startDate)
-      .lte('date', endDate);
+    try {
+      // Fetch sessions for this batch in the month
+      const { data: sessions } = await supabase
+        .from('sessions')
+        .select('id, date')
+        .eq('batch_id', batchId)
+        .gte('date', startDate)
+        .lte('date', endDate);
 
-    const sessionMap = new Map((sessions || []).map((s: any) => [s.id, s.date as string]));
-    const sessionIds = [...sessionMap.keys()];
+      // Normalize date to YYYY-MM-DD regardless of whether Supabase returns a
+      // full timestamp ("2026-07-01T00:00:00+00:00") or just the date part.
+      const sessionMap = new Map(
+        (sessions || []).map((s: any) => [s.id as string, (s.date as string).slice(0, 10)])
+      );
+      const sessionIds = [...sessionMap.keys()];
 
-    // Mark all batch session days (will be overwritten if student has a record)
-    const dayMap: Record<string, string> = {};
-    sessionMap.forEach((date) => { dayMap[date] = 'session'; });
+      const dayMap: Record<string, string> = {};
+      // Mark all batch session days first (shows as "no record" border)
+      sessionMap.forEach((date) => { dayMap[date] = 'session'; });
 
-    if (sessionIds.length > 0) {
-      const { data: attRecs } = await supabase
-        .from('attendance')
-        .select('status, session_id')
-        .eq('student_id', id as string)
-        .in('session_id', sessionIds);
+      if (sessionIds.length > 0) {
+        const { data: attRecs } = await supabase
+          .from('attendance')
+          .select('status, session_id')
+          .eq('student_id', id as string)
+          .in('session_id', sessionIds);
 
-      (attRecs || []).forEach((rec: any) => {
-        const date = sessionMap.get(rec.session_id);
-        if (date) dayMap[date] = rec.status;
-      });
+        (attRecs || []).forEach((rec: any) => {
+          const date = sessionMap.get(rec.session_id as string);
+          if (date) dayMap[date] = rec.status as string;
+        });
+      }
+
+      setCalData(dayMap);
+    } catch {
+      setCalData({});
+    } finally {
+      setCalLoading(false);
     }
-
-    setCalData(dayMap);
-    setCalLoading(false);
   };
 
   const openEdit = (s: any, plan: any) => {
@@ -583,6 +599,11 @@ export default function StudentDetailScreen() {
           {/* Calendar grid */}
           {calLoading ? (
             <ActivityIndicator size="small" color={Colors.primary} style={{ marginVertical: 20 }} />
+          ) : Object.keys(calData).length === 0 ? (
+            <View style={{ alignItems: 'center', paddingVertical: 20, gap: 6 }}>
+              <Ionicons name="calendar-outline" size={28} color={Colors.textMuted} />
+              <Text style={{ fontSize: 13, color: Colors.textMuted }}>No sessions recorded this month</Text>
+            </View>
           ) : (() => {
             const [year, m] = calMonth.split('-').map(Number);
             const firstDay = new Date(year, m - 1, 1);
