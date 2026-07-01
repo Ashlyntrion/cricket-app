@@ -38,6 +38,7 @@ export default function FeesScreen() {
   const [payModalVisible, setPayModalVisible] = useState(false);
   const [reminderModal, setReminderModal] = useState(false);
   const [dueSoonFees, setDueSoonFees] = useState<FeeRecord[]>([]);
+  const [savingId, setSavingId] = useState<string | null>(null);
   const reminderShownRef = useRef(false);
 
   const { recordPayment } = useFees();
@@ -151,12 +152,14 @@ export default function FeesScreen() {
     : fees;
 
   const doMarkPaid = async (fee: FeeRecord) => {
+    setSavingId(fee.id);
     const { error } = await recordPayment({
       student_id: fee.id,
       amount: fee.amount,
       payment_date: new Date().toISOString().slice(0, 10),
       for_month: monthStr,
     });
+    setSavingId(null);
     if (error) {
       Alert.alert('Error', 'Could not record payment. Please try again.');
     } else {
@@ -170,11 +173,14 @@ export default function FeesScreen() {
     }
   };
 
-  const confirmPaid = (fee: FeeRecord) => {
-    Alert.alert('Record Payment', `Mark ₹${fee.amount.toLocaleString()} from ${fee.name} as collected?`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Confirm', onPress: () => doMarkPaid(fee) },
-    ]);
+  // No Alert confirmation — Alert.alert is unreliable on iOS PWA.
+  // The pay button shows a spinner while saving; errors surface via Alert only on failure.
+  const handlePayFromCard = (fee: FeeRecord) => doMarkPaid(fee);
+
+  const handlePayFromModal = (fee: FeeRecord) => {
+    setPayModalVisible(false);
+    // Wait for modal close animation before saving so nothing is swallowed
+    setTimeout(() => doMarkPaid(fee), 350);
   };
 
   const statusIcon = (f: FeeRecord) => {
@@ -260,8 +266,15 @@ export default function FeesScreen() {
                           <TouchableOpacity style={styles.waBtn} onPress={() => sendWhatsApp(fee)}>
                             <Ionicons name="logo-whatsapp" size={14} color="white" />
                           </TouchableOpacity>
-                          <TouchableOpacity style={styles.payBtn} onPress={() => confirmPaid(fee)}>
-                            <Text style={styles.payBtnText}>Pay</Text>
+                          <TouchableOpacity
+                            style={styles.payBtn}
+                            onPress={() => handlePayFromCard(fee)}
+                            disabled={savingId === fee.id}
+                          >
+                            {savingId === fee.id
+                              ? <ActivityIndicator size="small" color="white" />
+                              : <Text style={styles.payBtnText}>Pay</Text>
+                            }
                           </TouchableOpacity>
                         </View>
                       )}
@@ -293,7 +306,7 @@ export default function FeesScreen() {
                 <TouchableOpacity
                   key={fee.id}
                   style={styles.modalRow}
-                  onPress={() => { setPayModalVisible(false); confirmPaid(fee); }}
+                  onPress={() => handlePayFromModal(fee)}
                 >
                   <View style={styles.modalAvatar}>
                     <Text style={styles.modalInitials}>{getInitials(fee.name)}</Text>
