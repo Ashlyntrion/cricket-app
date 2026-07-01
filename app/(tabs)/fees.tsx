@@ -40,6 +40,7 @@ export default function FeesScreen() {
   const [dueSoonFees, setDueSoonFees] = useState<FeeRecord[]>([]);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [confirmFee, setConfirmFee] = useState<FeeRecord | null>(null);
   const reminderShownRef = useRef(false);
 
   const { recordPayment } = useFees();
@@ -175,14 +176,19 @@ export default function FeesScreen() {
     }
   };
 
-  // No Alert confirmation — Alert.alert is unreliable on iOS PWA.
-  // The pay button shows a spinner while saving; errors surface via Alert only on failure.
-  const handlePayFromCard = (fee: FeeRecord) => doMarkPaid(fee);
+  // Both entry points show the confirmation dialog instead of paying immediately.
+  const handlePayFromCard = (fee: FeeRecord) => setConfirmFee(fee);
 
   const handlePayFromModal = (fee: FeeRecord) => {
     setPayModalVisible(false);
-    // Wait for modal close animation before saving so nothing is swallowed
-    setTimeout(() => doMarkPaid(fee), 350);
+    setTimeout(() => setConfirmFee(fee), 300);
+  };
+
+  const handleConfirmPay = () => {
+    if (!confirmFee) return;
+    const fee = confirmFee;
+    setConfirmFee(null);
+    setTimeout(() => doMarkPaid(fee), 200);
   };
 
   const statusIcon = (f: FeeRecord) => {
@@ -340,6 +346,35 @@ export default function FeesScreen() {
         </TouchableOpacity>
       </Modal>
 
+      {/* Payment confirmation dialog */}
+      <Modal visible={!!confirmFee} transparent animationType="fade" onRequestClose={() => setConfirmFee(null)}>
+        <View style={styles.confirmOverlay}>
+          <TouchableOpacity activeOpacity={1} style={styles.confirmCard}>
+            <View style={styles.confirmIconWrap}>
+              <Ionicons name="checkmark-circle" size={36} color={Colors.primary} />
+            </View>
+            <Text style={styles.confirmTitle}>Confirm Payment?</Text>
+            {confirmFee && (
+              <>
+                <Text style={styles.confirmName}>{confirmFee.name}</Text>
+                <Text style={styles.confirmAmt}>₹{confirmFee.amount.toLocaleString()}</Text>
+                <Text style={styles.confirmMonth}>
+                  {new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
+                </Text>
+              </>
+            )}
+            <View style={styles.confirmBtns}>
+              <TouchableOpacity style={styles.confirmCancel} onPress={() => setConfirmFee(null)}>
+                <Text style={styles.confirmCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.confirmOk} onPress={handleConfirmPay}>
+                <Text style={styles.confirmOkText}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
       {/* Auto WhatsApp Reminder Modal — fires when fees due within 3 days */}
       <Modal visible={reminderModal} transparent animationType="slide" onRequestClose={() => setReminderModal(false)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setReminderModal(false)}>
@@ -484,4 +519,34 @@ const styles = StyleSheet.create({
     backgroundColor: '#25D366', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7,
   },
   reminderWaBtnText: { color: 'white', fontSize: 12, fontWeight: '700' },
+  confirmOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center', justifyContent: 'center', padding: 32,
+  },
+  confirmCard: {
+    backgroundColor: Colors.surface, borderRadius: 20, padding: 28,
+    alignItems: 'center', width: '100%',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25, shadowRadius: 20, elevation: 20,
+  },
+  confirmIconWrap: {
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: 'rgba(34,197,94,0.1)', alignItems: 'center', justifyContent: 'center',
+    marginBottom: 14,
+  },
+  confirmTitle: { fontSize: 19, fontWeight: '800', color: Colors.text, marginBottom: 10 },
+  confirmName: { fontSize: 16, fontWeight: '700', color: Colors.text, marginBottom: 4 },
+  confirmAmt: { fontSize: 26, fontWeight: '900', color: Colors.primary, marginBottom: 4 },
+  confirmMonth: { fontSize: 13, color: Colors.textSecondary, marginBottom: 24 },
+  confirmBtns: { flexDirection: 'row', gap: 12, width: '100%' },
+  confirmCancel: {
+    flex: 1, borderRadius: 12, paddingVertical: 14,
+    borderWidth: 1.5, borderColor: Colors.border, alignItems: 'center',
+  },
+  confirmCancelText: { fontSize: 15, fontWeight: '700', color: Colors.textSecondary },
+  confirmOk: {
+    flex: 1, borderRadius: 12, paddingVertical: 14,
+    backgroundColor: Colors.primary, alignItems: 'center',
+  },
+  confirmOkText: { fontSize: 15, fontWeight: '700', color: 'white' },
 });
