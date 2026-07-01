@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Pressable, ScrollView,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform,
   Modal, ActivityIndicator, Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -31,11 +31,44 @@ function getInitials(name: string) {
 
 const monthStr = new Date().toISOString().slice(0, 7);
 
+/**
+ * On iOS Safari PWA, React Native's touch responder system is unreliable inside
+ * overflow:scroll containers. This component falls back to a plain div with a
+ * native onClick handler on web, which always works on iOS Safari.
+ */
+function Btn({
+  style,
+  onPress,
+  disabled,
+  children,
+}: {
+  style: any;
+  onPress: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
+  if (Platform.OS === 'web') {
+    return (
+      <View
+        style={[style, disabled && { opacity: 0.5 }]}
+        // @ts-ignore — onClick is a valid DOM prop on RN Web
+        onClick={disabled ? undefined : onPress}
+      >
+        {children}
+      </View>
+    );
+  }
+  return (
+    <TouchableOpacity style={style} onPress={onPress} disabled={disabled} activeOpacity={0.75}>
+      {children}
+    </TouchableOpacity>
+  );
+}
+
 export default function FeesScreen() {
   const [fees, setFees] = useState<FeeRecord[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('month');
-  const [selectedFee, setSelectedFee] = useState<FeeRecord | null>(null);
   const [payModalVisible, setPayModalVisible] = useState(false);
   const [reminderModal, setReminderModal] = useState(false);
   const [dueSoonFees, setDueSoonFees] = useState<FeeRecord[]>([]);
@@ -49,12 +82,9 @@ export default function FeesScreen() {
 
   const sendWhatsApp = (fee: FeeRecord) => {
     const month = new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
-    let msg = '';
-    if (fee.status === 'overdue') {
-      msg = `Hi ${fee.name}, your cricket coaching fee of ₹${fee.amount.toLocaleString()} for ${month} is overdue by ${fee.daysOverdue} day${fee.daysOverdue !== 1 ? 's' : ''}. Please pay at the earliest. – ${coachName}, ${academyName}`;
-    } else {
-      msg = `Hi ${fee.name}, your cricket coaching fee of ₹${fee.amount.toLocaleString()} for ${month} is due soon. Please arrange the payment. – ${coachName}, ${academyName}`;
-    }
+    const msg = fee.status === 'overdue'
+      ? `Hi ${fee.name}, your cricket coaching fee of ₹${fee.amount.toLocaleString()} for ${month} is overdue by ${fee.daysOverdue} day${fee.daysOverdue !== 1 ? 's' : ''}. Please pay at the earliest. – ${coachName}, ${academyName}`
+      : `Hi ${fee.name}, your cricket coaching fee of ₹${fee.amount.toLocaleString()} for ${month} is due soon. Please arrange the payment. – ${coachName}, ${academyName}`;
     const phone = (fee.phone || '').replace(/\D/g, '');
     const dialCode = phone.length === 10 ? `91${phone}` : phone;
     if (!dialCode) return;
@@ -99,7 +129,6 @@ export default function FeesScreen() {
           daysUntilDue = Math.ceil((dueDate.getTime() - today.getTime()) / 86400000);
         }
       }
-
       return { id: s.id, name: s.name, phone: s.phone ?? '', batch: s.batch?.name ?? '', amount: plan?.amount ?? 0, status, paidDate, daysOverdue, daysUntilDue };
     });
 
@@ -139,23 +168,12 @@ export default function FeesScreen() {
     });
     setSavingId(null);
     if (error) {
-      setSaveError('Could not record payment. Please try again.');
+      setSaveError(`Payment failed: ${error.message}`);
     } else {
       setFees((prev) =>
         prev.map((f) => f.id === fee.id ? { ...f, status: 'paid', paidDate: 'Today', daysOverdue: undefined, daysUntilDue: undefined } : f)
       );
-      setSelectedFee(null);
     }
-  };
-
-  const openConfirm = (fee: FeeRecord) => {
-    setSelectedFee(null);
-    setConfirmFee(fee);
-  };
-
-  const handlePayFromModal = (fee: FeeRecord) => {
-    setPayModalVisible(false);
-    setTimeout(() => setConfirmFee(fee), 300);
   };
 
   const handleConfirmPay = () => {
@@ -191,7 +209,7 @@ export default function FeesScreen() {
           <TouchableOpacity
             key={t.key}
             style={[styles.tab, activeTab === t.key && styles.tabActive]}
-            onPress={() => { setActiveTab(t.key); setSelectedFee(null); }}
+            onPress={() => setActiveTab(t.key)}
           >
             <Text style={[styles.tabText, activeTab === t.key && styles.tabTextActive]}>{t.label}</Text>
           </TouchableOpacity>
@@ -214,22 +232,19 @@ export default function FeesScreen() {
       </View>
 
       {saveError && (
-        <View style={styles.errorBanner}>
+        <Btn style={styles.errorBanner} onPress={() => setSaveError(null)}>
           <Ionicons name="alert-circle" size={16} color="white" />
           <Text style={styles.errorBannerText}>{saveError}</Text>
-          <TouchableOpacity onPress={() => setSaveError(null)}>
-            <Ionicons name="close" size={16} color="white" />
-          </TouchableOpacity>
-        </View>
+          <Ionicons name="close" size={16} color="white" />
+        </Btn>
       )}
 
-      {/* Fee list — cards are selectable rows only, NO buttons inside the ScrollView */}
       {dataLoading ? (
         <View style={styles.loadingWrap}>
           <ActivityIndicator size="large" color={Colors.primary} />
         </View>
       ) : (
-        <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
           <View style={styles.list}>
             {displayed.length === 0 ? (
               <View style={styles.emptyWrap}>
@@ -242,83 +257,53 @@ export default function FeesScreen() {
               displayed.map((fee) => {
                 const sub = statusSubtext(fee);
                 const unpaid = fee.status !== 'paid' && fee.amount > 0;
-                const isSelected = selectedFee?.id === fee.id;
                 return (
-                  <Pressable
-                    key={fee.id}
-                    style={[styles.feeCard, isSelected && styles.feeCardSelected]}
-                    onPress={() => unpaid ? setSelectedFee(isSelected ? null : fee) : undefined}
-                  >
-                    <View style={styles.feeAvatar}>
-                      <Text style={styles.feeInitials}>{getInitials(fee.name)}</Text>
+                  <View key={fee.id} style={styles.feeCard}>
+                    <View style={styles.feeCardTop}>
+                      <View style={styles.feeAvatar}>
+                        <Text style={styles.feeInitials}>{getInitials(fee.name)}</Text>
+                      </View>
+                      <View style={styles.feeInfo}>
+                        <Text style={styles.feeName}>{fee.name}</Text>
+                        <Text style={styles.feeBatch}>{fee.batch}</Text>
+                        <Text style={[styles.feeSubtext, { color: sub.color }]}>{sub.text}</Text>
+                      </View>
+                      <View style={styles.feeRight}>
+                        <Text style={styles.feeAmt}>{fee.amount > 0 ? `₹${fee.amount.toLocaleString()}` : '—'}</Text>
+                        {statusIcon(fee)}
+                      </View>
                     </View>
-                    <View style={styles.feeInfo}>
-                      <Text style={styles.feeName}>{fee.name}</Text>
-                      <Text style={styles.feeBatch}>{fee.batch}</Text>
-                      <Text style={[styles.feeSubtext, { color: sub.color }]}>{sub.text}</Text>
-                    </View>
-                    <View style={styles.feeRight}>
-                      <Text style={styles.feeAmt}>{fee.amount > 0 ? `₹${fee.amount.toLocaleString()}` : '—'}</Text>
-                      {statusIcon(fee)}
-                      {unpaid && (
-                        <Ionicons
-                          name={isSelected ? 'chevron-down' : 'chevron-forward'}
-                          size={14}
-                          color={isSelected ? Colors.primary : Colors.textMuted}
-                        />
-                      )}
-                    </View>
-                  </Pressable>
+
+                    {unpaid && (
+                      <View style={styles.feeCardActions}>
+                        <Btn style={styles.waBtn} onPress={() => sendWhatsApp(fee)}>
+                          <Ionicons name="logo-whatsapp" size={15} color="white" />
+                          <Text style={styles.waBtnText}>Remind</Text>
+                        </Btn>
+                        <Btn
+                          style={styles.payBtn}
+                          onPress={() => setConfirmFee(fee)}
+                          disabled={savingId === fee.id}
+                        >
+                          {savingId === fee.id
+                            ? <ActivityIndicator size="small" color="white" />
+                            : (
+                              <>
+                                <Ionicons name="checkmark-circle-outline" size={15} color="white" />
+                                <Text style={styles.payBtnText}>Mark as Paid</Text>
+                              </>
+                            )
+                          }
+                        </Btn>
+                      </View>
+                    )}
+                  </View>
                 );
               })
             )}
           </View>
           <View style={{ height: 16 }} />
         </ScrollView>
-      )}
-
-      {/*
-        ACTION BAR — lives OUTSIDE the ScrollView so iOS Safari touch events
-        always reach it. Appears when an unpaid fee card is selected.
-      */}
-      {selectedFee && (
-        <View style={styles.actionBar}>
-          <View style={styles.actionBarHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.actionBarName}>{selectedFee.name}</Text>
-              <Text style={styles.actionBarSub}>
-                ₹{selectedFee.amount.toLocaleString()} · {new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
-              </Text>
-            </View>
-            <TouchableOpacity style={styles.actionDismiss} onPress={() => setSelectedFee(null)}>
-              <Ionicons name="close" size={18} color={Colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
-          <View style={styles.actionBtns}>
-            <TouchableOpacity
-              style={styles.actionWaBtn}
-              onPress={() => { sendWhatsApp(selectedFee); setSelectedFee(null); }}
-            >
-              <Ionicons name="logo-whatsapp" size={18} color="white" />
-              <Text style={styles.actionBtnText}>Remind</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.actionPayBtn}
-              onPress={() => openConfirm(selectedFee)}
-              disabled={savingId === selectedFee.id}
-            >
-              {savingId === selectedFee.id
-                ? <ActivityIndicator size="small" color="white" />
-                : (
-                  <>
-                    <Ionicons name="checkmark-circle-outline" size={18} color="white" />
-                    <Text style={styles.actionBtnText}>Mark as Paid</Text>
-                  </>
-                )
-              }
-            </TouchableOpacity>
-          </View>
-        </View>
       )}
 
       <View style={styles.fabRow}>
@@ -335,9 +320,13 @@ export default function FeesScreen() {
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>Record Payment</Text>
             <Text style={styles.modalSub}>Select a student to mark as paid</Text>
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <ScrollView showsVerticalScrollIndicator={false}>
               {fees.filter((f) => f.status !== 'paid').map((fee) => (
-                <TouchableOpacity key={fee.id} style={styles.modalRow} onPress={() => handlePayFromModal(fee)}>
+                <Btn
+                  key={fee.id}
+                  style={styles.modalRow}
+                  onPress={() => { setPayModalVisible(false); setTimeout(() => setConfirmFee(fee), 300); }}
+                >
                   <View style={styles.modalAvatar}>
                     <Text style={styles.modalInitials}>{getInitials(fee.name)}</Text>
                   </View>
@@ -348,7 +337,7 @@ export default function FeesScreen() {
                   <Text style={[styles.modalAmt, { color: fee.status === 'overdue' ? Colors.danger : Colors.warning }]}>
                     ₹{fee.amount.toLocaleString()}
                   </Text>
-                </TouchableOpacity>
+                </Btn>
               ))}
               {fees.filter((f) => f.status !== 'paid').length === 0 && (
                 <Text style={styles.modalEmpty}>All payments are collected! 🎉</Text>
@@ -361,7 +350,7 @@ export default function FeesScreen() {
       {/* Payment confirmation dialog */}
       <Modal visible={!!confirmFee} transparent animationType="fade" onRequestClose={() => setConfirmFee(null)}>
         <View style={styles.confirmOverlay}>
-          <TouchableOpacity activeOpacity={1} style={styles.confirmCard}>
+          <View style={styles.confirmCard}>
             <View style={styles.confirmIconWrap}>
               <Ionicons name="checkmark-circle" size={36} color={Colors.primary} />
             </View>
@@ -383,11 +372,11 @@ export default function FeesScreen() {
                 <Text style={styles.confirmOkText}>Confirm</Text>
               </TouchableOpacity>
             </View>
-          </TouchableOpacity>
+          </View>
         </View>
       </Modal>
 
-      {/* WhatsApp reminder modal — auto-shown when fees due within 3 days */}
+      {/* WhatsApp reminder modal */}
       <Modal visible={reminderModal} transparent animationType="slide" onRequestClose={() => setReminderModal(false)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setReminderModal(false)}>
           <TouchableOpacity activeOpacity={1} style={styles.modalSheet}>
@@ -406,7 +395,7 @@ export default function FeesScreen() {
                 <Ionicons name="close" size={22} color={Colors.textSecondary} />
               </TouchableOpacity>
             </View>
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <ScrollView showsVerticalScrollIndicator={false}>
               {dueSoonFees.map((fee, i) => (
                 <View
                   key={fee.id}
@@ -421,10 +410,10 @@ export default function FeesScreen() {
                       Due in {fee.daysUntilDue} day{fee.daysUntilDue !== 1 ? 's' : ''} · ₹{fee.amount.toLocaleString()}
                     </Text>
                   </View>
-                  <TouchableOpacity style={styles.reminderWaBtn} onPress={() => sendWhatsApp(fee)}>
+                  <Btn style={styles.reminderWaBtn} onPress={() => sendWhatsApp(fee)}>
                     <Ionicons name="logo-whatsapp" size={16} color="white" />
                     <Text style={styles.reminderWaBtnText}>Send</Text>
-                  </TouchableOpacity>
+                  </Btn>
                 </View>
               ))}
               <View style={{ height: 8 }} />
@@ -460,12 +449,8 @@ const styles = StyleSheet.create({
   emptyWrap: { alignItems: 'center', paddingVertical: 48, gap: 10 },
   emptyText: { fontSize: 15, color: Colors.textSecondary, fontWeight: '500' },
 
-  feeCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: Colors.surface, borderRadius: 14, padding: 14,
-    borderWidth: 1, borderColor: Colors.border,
-  },
-  feeCardSelected: { borderColor: Colors.primary, borderWidth: 2 },
+  feeCard: { backgroundColor: Colors.surface, borderRadius: 14, borderWidth: 1, borderColor: Colors.border, overflow: 'hidden' },
+  feeCardTop: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 },
   feeAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center' },
   feeInitials: { fontSize: 15, fontWeight: '700', color: Colors.text },
   feeInfo: { flex: 1 },
@@ -475,27 +460,11 @@ const styles = StyleSheet.create({
   feeRight: { alignItems: 'flex-end', gap: 4 },
   feeAmt: { fontSize: 15, fontWeight: '800', color: Colors.text },
 
-  // Action bar — rendered outside ScrollView for reliable iOS touch handling
-  actionBar: {
-    backgroundColor: Colors.surface,
-    borderTopWidth: 1, borderTopColor: Colors.border,
-    paddingHorizontal: 14, paddingTop: 12, paddingBottom: 10,
-  },
-  actionBarHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  actionBarName: { fontSize: 15, fontWeight: '800', color: Colors.text },
-  actionBarSub: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
-  actionDismiss: { padding: 4 },
-  actionBtns: { flexDirection: 'row', gap: 10 },
-  actionWaBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    backgroundColor: '#25D366', borderRadius: 12,
-    paddingVertical: 14, paddingHorizontal: 18,
-  },
-  actionPayBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 14,
-  },
-  actionBtnText: { color: 'white', fontSize: 14, fontWeight: '800' },
+  feeCardActions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: Colors.border },
+  waBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#25D366', paddingVertical: 13, paddingHorizontal: 16 },
+  waBtnText: { color: 'white', fontSize: 13, fontWeight: '700' },
+  payBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: Colors.primary, paddingVertical: 13 },
+  payBtnText: { color: 'white', fontSize: 13, fontWeight: '700' },
 
   fabRow: { padding: 14, paddingBottom: 12 },
   fab: { backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
